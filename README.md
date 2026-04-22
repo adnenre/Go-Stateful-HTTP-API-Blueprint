@@ -1,6 +1,6 @@
 # REST API Blueprint
 
-[![Docker Pulls](https://img.shields.io/docker/pulls/adnenre/rest-api-blueprint)](https://hub.docker.com/r/adnenrebai/rest-api-blueprint)
+[![Docker Pulls](https://img.shields.io/docker/pulls/adnenrebai/rest-api-blueprint)](https://hub.docker.com/r/adnenrebai/rest-api-blueprint)
 
 A reusable, contract‑first REST API template built with **pure Go (net/http)** and a **feature‑based layered architecture**.  
 Every feature follows the same pattern: `controller → service → repository → model → mapper → dto`.  
