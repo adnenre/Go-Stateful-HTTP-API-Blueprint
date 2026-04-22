@@ -1,0 +1,110 @@
+# OpenAPI contract (to be defined)
+openapi: 3.0.0
+info:
+  title: REST API Blueprint
+  description: |
+    A reusable, contract‑first REST API template with enterprise‑ready features.
+    This specification defines the `/health` endpoint as the first building block.
+  version: 1.0.0
+  contact:
+    name: API Support
+    email: support@example.com
+  license:
+    name: MIT
+    url: https://opensource.org/licenses/MIT
+
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+  - url: https://api.example.com/v1
+    description: Production server
+
+tags:
+  - name: Health
+    description: Service health and readiness checks
+
+paths:
+  /v1/health:
+    get:
+      summary: Health check
+      description: |
+        Returns the current health status of the API service, including uptime,
+        version, and timestamp. Used by load balancers and orchestration tools.
+      operationId: getHealth
+      tags:
+        - Health
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: success
+                data:
+                  status: healthy
+                  timestamp: "2026-04-22T12:34:56Z"
+                  uptime: "2h3m5s"
+                  version: "1.0.0"
+                  checks:
+                    database: "ok"
+        "503":
+          description: Service is unhealthy (e.g., database down)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: success
+                data:
+                  status: unhealthy
+                  timestamp: "2026-04-22T12:34:56Z"
+                  uptime: "2h3m5s"
+                  version: "1.0.0"
+                  checks:
+                    database: "failed"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required:
+        - status
+        - data
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+          description: Overall status of the API response envelope
+          example: success
+        data:
+          type: object
+          required:
+            - status
+            - timestamp
+            - uptime
+            - version
+          properties:
+            status:
+              type: string
+              enum: [healthy, unhealthy]
+              description: Health state of the service
+            timestamp:
+              type: string
+              format: date-time
+              description: Current server time (ISO 8601)
+            uptime:
+              type: string
+              description: Human‑readable service uptime (e.g., "1h2m3s")
+            version:
+              type: string
+              description: API version (from build time)
+            checks:
+              type: object
+              additionalProperties:
+                type: string
+              description: Detailed health checks for dependencies (database, cache, etc.)
+              example:
+                database: "ok"
+                redis: "ok"
