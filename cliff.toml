@@ -1,0 +1,22 @@
+# cliff.toml
+[changelog]
+header = "# Changelog\n"
+body = """
+{% for group, commits in commits | group_by(attribute="group") %}
+### {{ group | upper_first }}
+{% for commit in commits %}
+- {{ commit.message | upper_first }} ([{{ commit.id | truncate(length=7, end="") }}]({{ commit.url | default(value="#") }})){% if commit.breaking %} **BREAKING**{% endif %}
+{%- endfor %}
+{% endfor %}
+"""
+trim = true
+footer = ""
+
+[git]
+conventional_commits = true
+filter_commits = true
+split_commits = false
+
+[remote.github]
+owner = "adnenre"
+repo = "rest-api-blueprint"

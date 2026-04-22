@@ -1,6 +1,7 @@
 package service
 
-// HealthService defines the business logic interface
-type HealthService interface {
-	// TODO: add methods
+import "rest-api-blueprint/internal/features/health/dto"
+
+type Service interface {
+	GetHealth() (*dto.HealthData, error)
 }

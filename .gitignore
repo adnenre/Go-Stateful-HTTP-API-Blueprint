@@ -1,0 +1,54 @@
+# Binaries and build artifacts
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+main
+main.exe
+tmp/
+dist/
+
+# Generated code (from oapi-codegen)
+internal/gen/
+
+# Go workspace / module files
+go.work
+go.work.sum
+
+# Dependency directories
+vendor/
+
+# Test / coverage
+*.test
+*.out
+coverage.out
+coverage.html
+
+# Air (live reload) tmp folder
+tmp/
+build-errors.log
+
+# IDE / editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Environment files
+.env
+.env.local
+.env.*.local
+
+# OS generated files
+Thumbs.db
+ehthumbs.db
+
+# Logs
+*.log
+
+# Binary and data for Docker
+*.db
+*.sqlite
