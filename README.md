@@ -1,5 +1,7 @@
 # REST API Blueprint
 
+[![Docker Pulls](https://img.shields.io/docker/pulls/adnenre/rest-api-blueprint)](https://hub.docker.com/r/adnenrebai/rest-api-blueprint)
+
 A reusable, contract‑first REST API template built with **pure Go (net/http)** and a **feature‑based layered architecture**.  
 Every feature follows the same pattern: `controller → service → repository → model → mapper → dto`.  
 The API contract (OpenAPI 3.0) is the single source of truth – all code is generated from it.
@@ -13,6 +15,30 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 - **OpenAPI UI** – Swagger documentation embedded in the binary.
 - **Makefile** – Automates generation, scaffolding, running, testing, and cleaning.
 - **Microservice‑ready** – Designed to be deployed as a monolith today and split into microservices tomorrow with minimal refactoring.
+
+## 🐳 Running with Docker
+
+You can run the pre‑built Docker image from Docker Hub:
+
+```bash
+docker pull adnenrebai/rest-api-blueprint:main
+docker run -p 8080:8080 adnenrebai/rest-api-blueprint:main
+```
+
+Or use a specific version:
+
+```bash
+docker pull adnenrebai/rest-api-blueprint:v1.0.0
+docker run -p 8080:8080 adnenrebai/rest-api-blueprint:v1.0.0
+```
+
+Then test the health endpoint:
+
+```bash
+curl http://localhost:8080/v1/health
+```
+
+> The Docker image is built and pushed automatically on every tag push (e.g., `v1.0.0`). The `:main` tag is updated on pushes to the `main` branch.
 
 ## 📁 Project Structure
 
