@@ -6,11 +6,12 @@
 IMAGE_NAME      := rest-api-blueprint
 DEV_IMAGE_NAME  := rest-api-blueprint:dev
 DOCKER          := docker
+DOCKER_COMPOSE  := docker-compose
 GO              := go
 
 # Phony targets (no file produced)
 .PHONY: help install-tools install-air generate scaffold-feature run dev test clean
-.PHONY: docker-build docker-build-dev docker-run docker-dev docker-clean
+.PHONY: docker-up docker-down docker-logs docker-dev docker-build docker-clean
 
 # -----------------------------------------------------------------------------
 # Help
@@ -25,16 +26,17 @@ help:
 	@echo "    make generate           - Generate server stubs from openapi.yaml"
 	@echo "    make scaffold-feature name=X - Create full layered structure for a new feature"
 	@echo "    make run                - Run the server locally (no live reload)"
-	@echo "    make dev                - Run with live reload (air)"
+	@echo "    make dev                - Run with live reload (air) - local only"
 	@echo "    make test               - Run all tests"
 	@echo "    make clean              - Remove generated files"
 	@echo ""
-	@echo "  Docker:"
-	@echo "    make docker-build       - Build production Docker image"
-	@echo "    make docker-build-dev   - Build development Docker image (live reload)"
-	@echo "    make docker-run         - Run production container"
-	@echo "    make docker-dev         - Run development container with live reload"
-	@echo "    make docker-clean       - Remove Docker images"
+	@echo "  Docker Compose (full stack with PostgreSQL):"
+	@echo "    make docker-up          - Start all services (app, postgres) in detached mode"
+	@echo "    make docker-down        - Stop and remove all containers"
+	@echo "    make docker-logs        - Tail logs from all services"
+	@echo "    make docker-dev         - Alias for docker-up (development environment)"
+	@echo "    make docker-build       - Rebuild the app image (useful after dependency changes)"
+	@echo "    make docker-clean       - Remove containers, volumes, and images"
 
 # -----------------------------------------------------------------------------
 # Tool installation
@@ -94,7 +96,7 @@ _create_file:
 	fi
 
 # -----------------------------------------------------------------------------
-# Local development
+# Local development (without Docker)
 # -----------------------------------------------------------------------------
 run: generate
 	@echo "🚀 Starting server..."
@@ -115,25 +117,33 @@ clean:
 	@echo "✅ Done"
 
 # -----------------------------------------------------------------------------
-# Docker
+# Docker Compose (full environment with PostgreSQL)
 # -----------------------------------------------------------------------------
+docker-up:
+	@echo "🐳 Starting all services with Docker Compose (detached)..."
+	@$(DOCKER_COMPOSE) up -d
+	@echo "✅ Services running. Access API at http://localhost:$$(grep ^SERVER_PORT .env | cut -d '=' -f2)"
+	@echo "   Logs: make docker-logs"
+
+docker-down:
+	@echo "🛑 Stopping and removing containers..."
+	@$(DOCKER_COMPOSE) down
+	@echo "✅ Done"
+
+docker-logs:
+	@echo "📋 Tailing logs (Ctrl+C to exit)..."
+	@$(DOCKER_COMPOSE) logs -f
+
+docker-dev: docker-up
+	@echo "🌟 Development environment ready. API available at http://localhost:$$(grep ^SERVER_PORT .env | cut -d '=' -f2)"
+	@echo "   Source code is mounted for hot reload (air)."
+
 docker-build:
-	@echo "🐳 Building production Docker image..."
-	@$(DOCKER) build -t $(IMAGE_NAME):latest -f Dockerfile .
-
-docker-build-dev:
-	@echo "🐳 Building development Docker image (with live reload)..."
-	@$(DOCKER) build -t $(DEV_IMAGE_NAME) -f Dockerfile.dev .
-
-docker-run:
-	@echo "🐳 Running production container..."
-	@$(DOCKER) run -p 8080:8080 $(IMAGE_NAME):latest
-
-docker-dev:
-	@echo "🐳 Running development container with live reload..."
-	@$(DOCKER) run -p 8080:8080 -v $(PWD):/app $(DEV_IMAGE_NAME)
+	@echo "🐳 Building app image using Docker Compose..."
+	@$(DOCKER_COMPOSE) build app
+	@echo "✅ Image built. Use 'make docker-up' to start."
 
 docker-clean:
-	@echo "🧹 Removing Docker images..."
-	-@$(DOCKER) rmi $(IMAGE_NAME):latest $(DEV_IMAGE_NAME) 2>/dev/null || true
-	@echo "✅ Done"
+	@echo "🧹 Removing containers, volumes, and images..."
+	@$(DOCKER_COMPOSE) down -v --rmi local
+	@echo "✅ Cleaned up"
