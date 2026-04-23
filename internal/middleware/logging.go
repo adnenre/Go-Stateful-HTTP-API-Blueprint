@@ -6,16 +6,14 @@ import (
 	"time"
 )
 
-// Logging middleware logs each request with method, path, status, latency, and request ID.
 func Logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		// Capture status code
 		rw := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 		next.ServeHTTP(rw, r)
 		latency := time.Since(start).Milliseconds()
 
-		// Extract request ID from context
+		// Use the same GetRequestID function from the same package
 		requestID := GetRequestID(r.Context())
 
 		slog.Info("http request",
@@ -29,7 +27,6 @@ func Logging(next http.Handler) http.Handler {
 	})
 }
 
-// responseWriter captures the status code
 type responseWriter struct {
 	http.ResponseWriter
 	statusCode int
