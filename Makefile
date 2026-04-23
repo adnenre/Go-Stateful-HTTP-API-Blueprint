@@ -133,10 +133,11 @@ docker-down:
 docker-logs:
 	@echo "📋 Tailing logs (Ctrl+C to exit)..."
 	@$(DOCKER_COMPOSE) logs -f
-
-docker-dev: docker-up
-	@echo "🌟 Development environment ready. API available at http://localhost:$$(grep ^SERVER_PORT .env | cut -d '=' -f2)"
-	@echo "   Source code is mounted for hot reload (air)."
+	
+docker-dev:
+	@echo "🐳 Starting all services with logs attached (Ctrl+C to stop)..."
+	@$(DOCKER_COMPOSE) up
+	@echo "🌟 Development environment stopped."
 
 docker-build:
 	@echo "🐳 Building app image using Docker Compose..."
