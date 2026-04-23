@@ -1,7 +1,10 @@
 package service
 
-import "rest-api-blueprint/internal/features/health/dto"
+import (
+	"context"
+	"rest-api-blueprint/internal/features/health/dto"
+)
 
 type Service interface {
-	GetHealth() (*dto.HealthData, error)
+	GetHealth(ctx context.Context) (*dto.HealthData, error)
 }

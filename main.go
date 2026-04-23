@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"rest-api-blueprint/internal/config"
+	"rest-api-blueprint/internal/database"
 	"rest-api-blueprint/internal/features/health/controller"
 	"rest-api-blueprint/internal/features/health/repository"
 	"rest-api-blueprint/internal/features/health/service"
@@ -14,21 +15,48 @@ import (
 )
 
 func main() {
+	// ============================================================
+	// 1. LOAD CONFIGURATION (fail‑fast if missing required vars)
+	// ============================================================
 	cfg, err := config.Load()
 	if err != nil {
 		log.Fatalf("config error: %v", err)
 	}
+
+	// ============================================================
+	// 2. INITIALIZE STRUCTURED LOGGING (JSON output)
+	// ============================================================
 	logger.InitJSONLogger()
 	slog.Info("starting application", "port", cfg.ServerPort)
 
-	// Health feature wiring
-	healthRepo := repository.NewRepository()
+	// ============================================================
+	// 3. CONNECT TO DATABASE (PostgreSQL via GORM)
+	// ============================================================
+	if err := database.Connect(cfg.DatabaseURL); err != nil {
+		slog.Error("database connection failed", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("database connected")
+
+	// ============================================================
+	// 4. WIRE DEPENDENCIES FOR THE HEALTH FEATURE
+	// ============================================================
+	// Repository (data layer – currently placeholder)
+	healthRepo := repository.NewRepository(database.DB)
+	// Service (business logic)
 	healthSvc := service.NewService(healthRepo)
+	// Controller (HTTP handler)
 	healthCtrl := controller.NewHealthController(healthSvc)
 
+	// ============================================================
+	// 5. REGISTER ROUTES (generated from OpenAPI spec)
+	// ============================================================
 	mux := http.NewServeMux()
 	gen.HandlerFromMux(healthCtrl, mux)
 
+	// ============================================================
+	// 6. START HTTP SERVER
+	// ============================================================
 	addr := ":" + cfg.ServerPort
 	slog.Info("server starting", "address", addr)
 	if err := http.ListenAndServe(addr, mux); err != nil {

@@ -17,13 +17,17 @@ func NewHealthController(svc service.Service) *HealthController {
 
 // GetHealth implements gen.ServerInterface.
 func (c *HealthController) GetHealth(w http.ResponseWriter, r *http.Request) {
-	data, err := c.svc.GetHealth()
+	data, err := c.svc.GetHealth(r.Context())
 	if err != nil {
 		http.Error(w, "Internal server error", http.StatusInternalServerError)
 		return
 	}
 	resp := mapper.ToHealthResponse(data.Status, data.Uptime, data.Version, data.Checks)
 	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	if data.Status != "healthy" {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	} else {
+		w.WriteHeader(http.StatusOK)
+	}
 	json.NewEncoder(w).Encode(resp)
 }
