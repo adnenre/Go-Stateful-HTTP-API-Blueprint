@@ -5,6 +5,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 type Config struct {
@@ -17,22 +19,39 @@ type Config struct {
 }
 
 func Load() (*Config, error) {
-	cfg := &Config{
-		ServerPort:         getEnv("SERVER_PORT", "8080"),
-		DatabaseURL:        getEnv("DATABASE_URL", ""),
-		RedisURL:           getEnv("REDIS_URL", "localhost:6379"),
-		JWTSecret:          getEnv("JWT_SECRET", ""),
-		JWTExpiry:          getEnvDuration("JWT_EXPIRY", 15*time.Minute),
-		RateLimitPerSecond: getEnvInt("RATE_LIMIT_PER_SEC", 10),
+	// Load .env file for local development (ignore if not present)
+	_ = godotenv.Load()
+
+	serverPort := getEnv("SERVER_PORT", "8080")
+	databaseURL, err := getEnvRequired("DATABASE_URL")
+	if err != nil {
+		return nil, err
+	}
+	redisURL, err := getEnvRequired("REDIS_URL")
+	if err != nil {
+		return nil, err
+	}
+	jwtSecret, err := getEnvRequired("JWT_SECRET")
+	if err != nil {
+		return nil, err
+	}
+	jwtExpiry, err := getEnvDurationRequired("JWT_EXPIRY")
+	if err != nil {
+		return nil, err
+	}
+	rateLimit, err := getEnvIntRequired("RATE_LIMIT_PER_SEC")
+	if err != nil {
+		return nil, err
 	}
 
-	if cfg.DatabaseURL == "" {
-		return nil, fmt.Errorf("DATABASE_URL is required")
-	}
-	if cfg.JWTSecret == "" {
-		return nil, fmt.Errorf("JWT_SECRET is required")
-	}
-	return cfg, nil
+	return &Config{
+		ServerPort:         serverPort,
+		DatabaseURL:        databaseURL,
+		RedisURL:           redisURL,
+		JWTSecret:          jwtSecret,
+		JWTExpiry:          jwtExpiry,
+		RateLimitPerSecond: rateLimit,
+	}, nil
 }
 
 func getEnv(key, defaultVal string) string {
@@ -42,21 +61,34 @@ func getEnv(key, defaultVal string) string {
 	return defaultVal
 }
 
-func getEnvDuration(key string, defaultVal time.Duration) time.Duration {
-	if val := os.Getenv(key); val != "" {
-		d, err := time.ParseDuration(val)
-		if err == nil {
-			return d
-		}
+func getEnvRequired(key string) (string, error) {
+	val := os.Getenv(key)
+	if val == "" {
+		return "", fmt.Errorf("environment variable %s is required", key)
 	}
-	return defaultVal
+	return val, nil
 }
 
-func getEnvInt(key string, defaultVal int) int {
-	if val := os.Getenv(key); val != "" {
-		if i, err := strconv.Atoi(val); err == nil {
-			return i
-		}
+func getEnvDurationRequired(key string) (time.Duration, error) {
+	val := os.Getenv(key)
+	if val == "" {
+		return 0, fmt.Errorf("environment variable %s is required", key)
 	}
-	return defaultVal
+	d, err := time.ParseDuration(val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid duration for %s: %w", key, err)
+	}
+	return d, nil
+}
+
+func getEnvIntRequired(key string) (int, error) {
+	val := os.Getenv(key)
+	if val == "" {
+		return 0, fmt.Errorf("environment variable %s is required", key)
+	}
+	i, err := strconv.Atoi(val)
+	if err != nil {
+		return 0, fmt.Errorf("invalid integer for %s: %w", key, err)
+	}
+	return i, nil
 }
