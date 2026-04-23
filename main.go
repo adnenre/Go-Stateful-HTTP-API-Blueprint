@@ -13,6 +13,7 @@ import (
 	"rest-api-blueprint/internal/features/health/service"
 	"rest-api-blueprint/internal/gen"
 	"rest-api-blueprint/internal/logger"
+	"rest-api-blueprint/internal/middleware"
 )
 
 func main() {
@@ -40,8 +41,7 @@ func main() {
 	slog.Info("database connected")
 
 	// ============================================================
-	// 4. CONNECT TO REDIS (currently used for health checks only)
-	//    TODO: add rate limiting, idempotency, caching in future phases
+	// 4. CONNECT TO REDIS (for rate limiting, health checks, cache)
 	// ============================================================
 	if err := cache.InitRedis(cfg.RedisURL); err != nil {
 		slog.Error("redis connection failed", "error", err)
@@ -50,27 +50,36 @@ func main() {
 	slog.Info("redis connected", "url", cfg.RedisURL)
 
 	// ============================================================
-	// 5. WIRE DEPENDENCIES FOR THE HEALTH FEATURE
+	// 5. SETUP RATE LIMITING (distributed, using Redis)
 	// ============================================================
-	// Repository receives both database and Redis clients
+	rateLimiter := middleware.NewRateLimiter(cache.Client, cfg.RateLimitPerSecond)
+
+	// ============================================================
+	// 6. WIRE DEPENDENCIES FOR THE HEALTH FEATURE
+	// ============================================================
 	healthRepo := repository.NewRepository(database.DB, cache.Client)
-	// Service uses the repository to check dependencies
 	healthSvc := service.NewService(healthRepo)
-	// Controller handles the HTTP request
 	healthCtrl := controller.NewHealthController(healthSvc)
 
 	// ============================================================
-	// 6. REGISTER ROUTES (generated from OpenAPI spec)
+	// 7. REGISTER ROUTES (generated from OpenAPI spec)
 	// ============================================================
 	mux := http.NewServeMux()
-	gen.HandlerFromMux(healthCtrl, mux)
+	handler := gen.HandlerFromMux(healthCtrl, mux)
 
 	// ============================================================
-	// 7. START HTTP SERVER
+	// 8. APPLY MIDDLEWARES (order: RequestID -> Logging -> RateLimiter)
+	// ============================================================
+	handler = middleware.RequestIDMiddleware(handler) // Generate/read request ID
+	handler = middleware.Logging(handler)             // Log request with request ID
+	handler = rateLimiter.Middleware(middleware.DefaultIPKeyFunc)(handler)
+
+	// ============================================================
+	// 9. START HTTP SERVER
 	// ============================================================
 	addr := ":" + cfg.ServerPort
 	slog.Info("server starting", "address", addr)
-	if err := http.ListenAndServe(addr, mux); err != nil {
+	if err := http.ListenAndServe(addr, handler); err != nil {
 		slog.Error("server failed", "error", err)
 		os.Exit(1)
 	}
