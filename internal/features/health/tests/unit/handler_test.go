@@ -30,13 +30,13 @@ func TestHealthController_GetHealth(t *testing.T) {
 		wantDataStatus gen.HealthResponseDataStatus
 	}{
 		{
-			name: "success_healthy",
+			name: "success_healthy_with_both_checks",
 			mockReturn: &dto.HealthData{
 				Status:    "healthy",
 				Timestamp: "2026-04-22T12:00:00Z",
 				Uptime:    "1s",
 				Version:   "dev",
-				Checks:    map[string]string{"database": "ok"},
+				Checks:    map[string]string{"database": "ok", "redis": "ok"},
 			},
 			mockErr:        nil,
 			wantStatus:     http.StatusOK,
@@ -58,7 +58,21 @@ func TestHealthController_GetHealth(t *testing.T) {
 				Timestamp: "2026-04-22T12:00:00Z",
 				Uptime:    "1s",
 				Version:   "dev",
-				Checks:    map[string]string{"database": "connection refused"},
+				Checks:    map[string]string{"database": "connection refused", "redis": "ok"},
+			},
+			mockErr:        nil,
+			wantStatus:     http.StatusServiceUnavailable,
+			wantRespStatus: gen.Success,
+			wantDataStatus: gen.Unhealthy,
+		},
+		{
+			name: "unhealthy_redis",
+			mockReturn: &dto.HealthData{
+				Status:    "unhealthy",
+				Timestamp: "2026-04-22T12:00:00Z",
+				Uptime:    "1s",
+				Version:   "dev",
+				Checks:    map[string]string{"database": "ok", "redis": "connection refused"},
 			},
 			mockErr:        nil,
 			wantStatus:     http.StatusServiceUnavailable,
@@ -69,6 +83,9 @@ func TestHealthController_GetHealth(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			// ============================================================
+			// ARRANGE
+			// ============================================================
 			mockSvc := &mockService{
 				getHealthFunc: func(ctx context.Context) (*dto.HealthData, error) {
 					return tt.mockReturn, tt.mockErr
@@ -78,35 +95,57 @@ func TestHealthController_GetHealth(t *testing.T) {
 
 			req := httptest.NewRequest("GET", "/api/v1/health", nil)
 			w := httptest.NewRecorder()
+
+			// ============================================================
+			// ACT
+			// ============================================================
 			ctrl.GetHealth(w, req)
 
+			// ============================================================
+			// ASSERT
+			// ============================================================
+
+			// Assert HTTP status code
 			if w.Code != tt.wantStatus {
-				t.Errorf("got status %d, want %d", w.Code, tt.wantStatus)
+				t.Errorf("HTTP status = %d, want %d", w.Code, tt.wantStatus)
 			}
 
+			// For successful or unhealthy responses (non-500), validate JSON response
 			if tt.wantStatus == http.StatusOK || tt.wantStatus == http.StatusServiceUnavailable {
 				var resp gen.HealthResponse
 				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-					t.Fatal(err)
+					t.Fatal("failed to decode response JSON:", err)
 				}
+
+				// Assert envelope status
 				if resp.Status != tt.wantRespStatus {
-					t.Errorf("got status field %s, want %s", resp.Status, tt.wantRespStatus)
+					t.Errorf("resp.Status = %s, want %s", resp.Status, tt.wantRespStatus)
 				}
+
+				// Assert data.status
 				if resp.Data.Status != tt.wantDataStatus {
-					t.Errorf("got data.status %s, want %s", resp.Data.Status, tt.wantDataStatus)
+					t.Errorf("resp.Data.Status = %s, want %s", resp.Data.Status, tt.wantDataStatus)
 				}
-				// Optionally check that checks are included
+
+				// Assert checks map is present and matches expected values
 				if tt.mockReturn != nil && tt.mockReturn.Checks != nil {
 					if resp.Data.Checks == nil {
-						t.Error("expected checks to be present, got nil")
-					} else if (*resp.Data.Checks)["database"] != tt.mockReturn.Checks["database"] {
-						t.Errorf("expected database check %s, got %s", tt.mockReturn.Checks["database"], (*resp.Data.Checks)["database"])
+						t.Error("resp.Data.Checks is nil, expected non-nil")
+					} else {
+						for key, expectedValue := range tt.mockReturn.Checks {
+							if actualValue, ok := (*resp.Data.Checks)[key]; !ok {
+								t.Errorf("missing check key %q", key)
+							} else if actualValue != expectedValue {
+								t.Errorf("check[%q] = %s, want %s", key, actualValue, expectedValue)
+							}
+						}
 					}
 				}
 			} else if tt.wantStatus == http.StatusInternalServerError {
-				// No JSON response, just error text
-				if w.Body.String() != "Internal server error\n" {
-					t.Errorf("unexpected error body: %s", w.Body.String())
+				// Assert error response body
+				expectedBody := "Internal server error\n"
+				if w.Body.String() != expectedBody {
+					t.Errorf("error body = %q, want %q", w.Body.String(), expectedBody)
 				}
 			}
 		})

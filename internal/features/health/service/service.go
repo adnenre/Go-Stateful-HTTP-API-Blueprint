@@ -20,14 +20,21 @@ func NewService(repo repository.Repository) Service {
 func (s *service) GetHealth(ctx context.Context) (*dto.HealthData, error) {
 	checks := make(map[string]string)
 
-	// Check database connectivity
-	if err := s.repo.Ping(ctx); err != nil {
+	// Database check
+	if err := s.repo.PingDB(ctx); err != nil {
 		checks["database"] = err.Error()
 	} else {
 		checks["database"] = "ok"
 	}
 
-	// Determine overall status
+	// Redis check
+	if err := s.repo.PingRedis(ctx); err != nil {
+		checks["redis"] = err.Error()
+	} else {
+		checks["redis"] = "ok"
+	}
+
+	// Overall status
 	status := "healthy"
 	for _, v := range checks {
 		if v != "ok" {

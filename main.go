@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"os"
+	"rest-api-blueprint/internal/cache"
 	"rest-api-blueprint/internal/config"
 	"rest-api-blueprint/internal/database"
 	"rest-api-blueprint/internal/features/health/controller"
@@ -39,23 +40,33 @@ func main() {
 	slog.Info("database connected")
 
 	// ============================================================
-	// 4. WIRE DEPENDENCIES FOR THE HEALTH FEATURE
+	// 4. CONNECT TO REDIS (currently used for health checks only)
+	//    TODO: add rate limiting, idempotency, caching in future phases
 	// ============================================================
-	// Repository (data layer – currently placeholder)
-	healthRepo := repository.NewRepository(database.DB)
-	// Service (business logic)
+	if err := cache.InitRedis(cfg.RedisURL); err != nil {
+		slog.Error("redis connection failed", "error", err)
+		os.Exit(1)
+	}
+	slog.Info("redis connected", "url", cfg.RedisURL)
+
+	// ============================================================
+	// 5. WIRE DEPENDENCIES FOR THE HEALTH FEATURE
+	// ============================================================
+	// Repository receives both database and Redis clients
+	healthRepo := repository.NewRepository(database.DB, cache.Client)
+	// Service uses the repository to check dependencies
 	healthSvc := service.NewService(healthRepo)
-	// Controller (HTTP handler)
+	// Controller handles the HTTP request
 	healthCtrl := controller.NewHealthController(healthSvc)
 
 	// ============================================================
-	// 5. REGISTER ROUTES (generated from OpenAPI spec)
+	// 6. REGISTER ROUTES (generated from OpenAPI spec)
 	// ============================================================
 	mux := http.NewServeMux()
 	gen.HandlerFromMux(healthCtrl, mux)
 
 	// ============================================================
-	// 6. START HTTP SERVER
+	// 7. START HTTP SERVER
 	// ============================================================
 	addr := ":" + cfg.ServerPort
 	slog.Info("server starting", "address", addr)

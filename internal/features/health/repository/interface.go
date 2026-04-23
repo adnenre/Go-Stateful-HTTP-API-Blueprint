@@ -2,7 +2,8 @@ package repository
 
 import "context"
 
+// Repository defines the data access methods for health checks.
 type Repository interface {
-	// No methods needed for health, but defined for future extensibility.
-	Ping(ctx context.Context) error
+	PingDB(ctx context.Context) error
+	PingRedis(ctx context.Context) error
 }

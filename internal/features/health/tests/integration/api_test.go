@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"testing"
 
+	"rest-api-blueprint/internal/cache"
 	"rest-api-blueprint/internal/database"
 	"rest-api-blueprint/internal/features/health/controller"
 	"rest-api-blueprint/internal/features/health/repository"
@@ -20,25 +21,21 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// TestHealthIntegration verifies the health endpoint works with a real database.
 func TestHealthIntegration(t *testing.T) {
 	// ============================================================
 	// ARRANGE
 	// ============================================================
 
-	// 1. Find project root directory (where .env is located)
+	// Find project root and load .env
 	_, currentFile, _, ok := runtime.Caller(0)
 	if !ok {
-		t.Skip("cannot determine test file path, skipping")
+		t.Skip("cannot determine test file path")
 	}
-	// Navigate up: internal/features/health/tests/integration/api_test.go -> project root
 	projectRoot := filepath.Join(filepath.Dir(currentFile), "../../../../..")
 	envPath := filepath.Join(projectRoot, ".env")
-
-	// 2. Load .env if exists (ignore error if not found)
 	_ = godotenv.Load(envPath)
 
-	// 3. Read PostgreSQL credentials
+	// Get credentials
 	user := os.Getenv("POSTGRES_USER")
 	password := os.Getenv("POSTGRES_PASSWORD")
 	dbname := os.Getenv("POSTGRES_DB")
@@ -46,27 +43,33 @@ func TestHealthIntegration(t *testing.T) {
 	if port == "" {
 		port = "5432"
 	}
-
 	if user == "" || password == "" || dbname == "" {
-		t.Skip("POSTGRES_USER, POSTGRES_PASSWORD, or POSTGRES_DB not set, skipping integration test")
+		t.Skip("PostgreSQL credentials missing")
 	}
-
-	// 4. Build DATABASE_URL
 	dbURL := fmt.Sprintf("postgres://%s:%s@localhost:%s/%s?sslmode=disable", user, password, port, dbname)
 
-	// 5. Connect to database
+	// Connect to DB
 	if err := database.Connect(dbURL); err != nil {
 		t.Skipf("database unavailable: %v", err)
 	}
 	defer func() {
-		sqlDB, _ := database.DB.DB()
-		if sqlDB != nil {
-			sqlDB.Close()
+		if db, _ := database.DB.DB(); db != nil {
+			db.Close()
 		}
 	}()
 
-	// 6. Wire dependencies
-	repo := repository.NewRepository(database.DB)
+	// Connect to Redis
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	if err := cache.InitRedis(redisAddr); err != nil {
+		t.Skipf("redis unavailable: %v", err)
+	}
+	// No need to close Redis client globally
+
+	// Wire dependencies
+	repo := repository.NewRepository(database.DB, cache.Client)
 	svc := service.NewService(repo)
 	ctrl := controller.NewHealthController(svc)
 
@@ -96,10 +99,15 @@ func TestHealthIntegration(t *testing.T) {
 		t.Errorf("expected healthy, got %s", resp.Data.Status)
 	}
 	if resp.Data.Checks == nil {
-		t.Error("expected checks to be present, got nil")
-	} else if dbStatus, ok := (*resp.Data.Checks)["database"]; !ok {
-		t.Error("expected database check in checks map")
-	} else if dbStatus != "ok" {
-		t.Errorf("expected database check 'ok', got %s", dbStatus)
+		t.Error("checks map missing")
+	} else {
+		dbCheck, okDB := (*resp.Data.Checks)["database"]
+		if !okDB || dbCheck != "ok" {
+			t.Errorf("database check expected 'ok', got %v", dbCheck)
+		}
+		redisCheck, okRedis := (*resp.Data.Checks)["redis"]
+		if !okRedis || redisCheck != "ok" {
+			t.Errorf("redis check expected 'ok', got %v", redisCheck)
+		}
 	}
 }
