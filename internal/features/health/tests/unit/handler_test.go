@@ -6,10 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"testing"
+
+	"rest-api-blueprint/internal/errors"
 	"rest-api-blueprint/internal/features/health/controller"
 	"rest-api-blueprint/internal/features/health/dto"
 	"rest-api-blueprint/internal/gen"
-	"testing"
 )
 
 type mockService struct {
@@ -92,7 +94,6 @@ func TestHealthController_GetHealth(t *testing.T) {
 				},
 			}
 			ctrl := controller.NewHealthController(mockSvc)
-
 			req := httptest.NewRequest("GET", "/api/v1/health", nil)
 			w := httptest.NewRecorder()
 
@@ -104,48 +105,49 @@ func TestHealthController_GetHealth(t *testing.T) {
 			// ============================================================
 			// ASSERT
 			// ============================================================
-
-			// Assert HTTP status code
 			if w.Code != tt.wantStatus {
 				t.Errorf("HTTP status = %d, want %d", w.Code, tt.wantStatus)
 			}
 
-			// For successful or unhealthy responses (non-500), validate JSON response
 			if tt.wantStatus == http.StatusOK || tt.wantStatus == http.StatusServiceUnavailable {
 				var resp gen.HealthResponse
 				if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-					t.Fatal("failed to decode response JSON:", err)
+					t.Fatal(err)
 				}
-
-				// Assert envelope status
 				if resp.Status != tt.wantRespStatus {
 					t.Errorf("resp.Status = %s, want %s", resp.Status, tt.wantRespStatus)
 				}
-
-				// Assert data.status
 				if resp.Data.Status != tt.wantDataStatus {
 					t.Errorf("resp.Data.Status = %s, want %s", resp.Data.Status, tt.wantDataStatus)
 				}
-
-				// Assert checks map is present and matches expected values
 				if tt.mockReturn != nil && tt.mockReturn.Checks != nil {
 					if resp.Data.Checks == nil {
-						t.Error("resp.Data.Checks is nil, expected non-nil")
+						t.Error("checks map missing")
 					} else {
-						for key, expectedValue := range tt.mockReturn.Checks {
-							if actualValue, ok := (*resp.Data.Checks)[key]; !ok {
-								t.Errorf("missing check key %q", key)
-							} else if actualValue != expectedValue {
-								t.Errorf("check[%q] = %s, want %s", key, actualValue, expectedValue)
+						for k, v := range tt.mockReturn.Checks {
+							if (*resp.Data.Checks)[k] != v {
+								t.Errorf("check[%s] = %s, want %s", k, (*resp.Data.Checks)[k], v)
 							}
 						}
 					}
 				}
 			} else if tt.wantStatus == http.StatusInternalServerError {
-				// Assert error response body
-				expectedBody := "Internal server error\n"
-				if w.Body.String() != expectedBody {
-					t.Errorf("error body = %q, want %q", w.Body.String(), expectedBody)
+				// Expect RFC 7807 problem details
+				var problem errors.ProblemDetails
+				if err := json.NewDecoder(w.Body).Decode(&problem); err != nil {
+					t.Fatalf("failed to decode error response: %v", err)
+				}
+				if problem.Status != http.StatusInternalServerError {
+					t.Errorf("problem.Status = %d, want %d", problem.Status, http.StatusInternalServerError)
+				}
+				if problem.Title != "Internal Server Error" {
+					t.Errorf("problem.Title = %s, want 'Internal Server Error'", problem.Title)
+				}
+				if problem.Detail != "Failed to check health" {
+					t.Errorf("problem.Detail = %s, want 'Failed to check health'", problem.Detail)
+				}
+				if problem.Instance == "" {
+					t.Error("problem.Instance is empty")
 				}
 			}
 		})
