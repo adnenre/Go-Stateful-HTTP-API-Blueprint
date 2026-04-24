@@ -9,11 +9,41 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    container:
-      image: golang:1.26.2
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: testuser
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: testdb
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
 
       - name: Install oapi-codegen
         run: go install github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen@latest
@@ -22,4 +52,12 @@ jobs:
         run: make generate
 
       - name: Run tests
+        env:
+          CI: true # <-- added to skip container end‑to‑end test
+          DATABASE_URL: postgres://testuser:testpass@localhost:5432/testdb?sslmode=disable
+          REDIS_URL: localhost:6379
+          JWT_SECRET: ci-placeholder-secret
+          JWT_EXPIRY: 15m
+          RATE_LIMIT_PER_SEC: 10
+          SERVER_PORT: 8080
         run: make test
