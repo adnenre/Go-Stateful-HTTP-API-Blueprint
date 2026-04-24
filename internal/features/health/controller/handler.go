@@ -3,8 +3,10 @@ package controller
 import (
 	"encoding/json"
 	"net/http"
+	"rest-api-blueprint/internal/errors"
 	"rest-api-blueprint/internal/features/health/mapper"
 	"rest-api-blueprint/internal/features/health/service"
+	"rest-api-blueprint/internal/middleware"
 )
 
 type HealthController struct {
@@ -19,7 +21,8 @@ func NewHealthController(svc service.Service) *HealthController {
 func (c *HealthController) GetHealth(w http.ResponseWriter, r *http.Request) {
 	data, err := c.svc.GetHealth(r.Context())
 	if err != nil {
-		http.Error(w, "Internal server error", http.StatusInternalServerError)
+		instance := middleware.GetRequestID(r) // ← changed from r.Context() to r
+		errors.WriteProblemSimple(w, r, http.StatusInternalServerError, "Internal Server Error", "Failed to check health", instance)
 		return
 	}
 	resp := mapper.ToHealthResponse(data.Status, data.Uptime, data.Version, data.Checks)

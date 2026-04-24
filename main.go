@@ -68,17 +68,28 @@ func main() {
 	handler := gen.HandlerFromMux(healthCtrl, mux)
 
 	// ============================================================
-	// 8. APPLY MIDDLEWARES (order is critical for security)
-	//    Order: SecurityHeaders → CORS → RequestID → Logging → RateLimiter
+	// 8. APPLY MIDDLEWARES – ORDER MATTERS!
+	//
+	// The middlewares are applied from innermost to outermost.
+	// Execution order (outermost first) will be:
+	//   SecurityHeaders → CORS → RequestID → Logging → RateLimiter → baseHandler
+	//
+	// This ensures that RequestID and Logging run before the RateLimiter,
+	// so even when a request is rate‑limited (429), the X-Request-Id header
+	// is already set, the request ID is logged, and the error response's
+	// 'instance' field contains the correct value.
 	// ============================================================
 
-	// 8.1 Security headers – adds security headers with configurable HSTS max-age.
-	securityMiddleware := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
-		HSTSMaxAge: cfg.HSTSMaxAge,
-	})
-	handler = securityMiddleware(handler)
+	// 8.1 Rate limiting (innermost)
+	handler = rateLimiter.Middleware(middleware.DefaultIPKeyFunc)(handler)
 
-	// 8.2 CORS – must handle preflight OPTIONS and set allowed origins.
+	// 8.2 Logging – logs request method, path, status, latency, and request ID
+	handler = middleware.Logging(handler)
+
+	// 8.3 Request ID – generates/forwards X-Request-Id and stores it in context
+	handler = middleware.RequestIDMiddleware(handler)
+
+	// 8.4 CORS – handles preflight requests and sets CORS headers
 	corsMiddleware := middleware.NewCORS(middleware.CORSConfig{
 		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   cfg.CORSAllowedMethods,
@@ -87,14 +98,11 @@ func main() {
 	})
 	handler = corsMiddleware(handler)
 
-	// 8.3 Request ID – generate or forward X-Request-ID header for correlation.
-	handler = middleware.RequestIDMiddleware(handler)
-
-	// 8.4 Logging – logs every request (method, path, status, latency, request ID).
-	handler = middleware.Logging(handler)
-
-	// 8.5 Rate Limiting – enforces distributed rate limits (Redis), returns 429.
-	handler = rateLimiter.Middleware(middleware.DefaultIPKeyFunc)(handler)
+	// 8.5 Security headers (outermost) – adds X‑Content‑Type‑Options, etc.
+	securityMiddleware := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
+		HSTSMaxAge: cfg.HSTSMaxAge,
+	})
+	handler = securityMiddleware(handler)
 
 	// ============================================================
 	// 9. START HTTP SERVER

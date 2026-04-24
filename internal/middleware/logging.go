@@ -13,8 +13,8 @@ func Logging(next http.Handler) http.Handler {
 		next.ServeHTTP(rw, r)
 		latency := time.Since(start).Milliseconds()
 
-		// Use the same GetRequestID function from the same package
-		requestID := GetRequestID(r.Context())
+		// Use the updated GetRequestID that accepts *http.Request
+		requestID := GetRequestID(r)
 
 		slog.Info("http request",
 			"request_id", requestID,
