@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"rest-api-blueprint/internal/features/health/dto"
 	"rest-api-blueprint/internal/features/health/repository"
 	"time"
@@ -16,14 +17,37 @@ func NewService(repo repository.Repository) Service {
 	return &service{repo: repo}
 }
 
-func (s *service) GetHealth() (*dto.HealthData, error) {
-	// Here you could call s.repo.Ping(ctx) to check DB health.
-	// For now, assume healthy.
+func (s *service) GetHealth(ctx context.Context) (*dto.HealthData, error) {
+	checks := make(map[string]string)
+
+	// Database check
+	if err := s.repo.PingDB(ctx); err != nil {
+		checks["database"] = err.Error()
+	} else {
+		checks["database"] = "ok"
+	}
+
+	// Redis check
+	if err := s.repo.PingRedis(ctx); err != nil {
+		checks["redis"] = err.Error()
+	} else {
+		checks["redis"] = "ok"
+	}
+
+	// Overall status
+	status := "healthy"
+	for _, v := range checks {
+		if v != "ok" {
+			status = "unhealthy"
+			break
+		}
+	}
+
 	return &dto.HealthData{
-		Status:    "healthy",
+		Status:    status,
 		Timestamp: time.Now().Format(time.RFC3339),
 		Uptime:    time.Since(startTime).Round(time.Second).String(),
-		Version:   "dev",
-		Checks:    nil, // no dependencies to check
+		Version:   "1.0.0",
+		Checks:    checks,
 	}, nil
 }

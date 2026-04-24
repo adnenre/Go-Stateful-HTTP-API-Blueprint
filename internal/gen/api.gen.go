@@ -79,7 +79,7 @@ type HealthResponseStatus string
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// Health check
-	// (GET /v1/health)
+	// (GET /api/v1/health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
 }
 
@@ -226,7 +226,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	m.HandleFunc("GET "+options.BaseURL+"/v1/health", wrapper.GetHealth)
+	m.HandleFunc("GET "+options.BaseURL+"/api/v1/health", wrapper.GetHealth)
 
 	return m
 }

@@ -52,3 +52,4 @@ ehthumbs.db
 # Binary and data for Docker
 *.db
 *.sqlite
+.env
