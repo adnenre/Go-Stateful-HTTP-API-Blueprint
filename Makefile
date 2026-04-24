@@ -145,6 +145,22 @@ docker-build:
 	@echo "✅ Image built. Use 'make docker-up' to start."
 
 docker-clean:
-	@echo "🧹 Removing containers, volumes, and images..."
+	@echo "🧹 Removing containers, volumes, images, and build cache..."
 	@$(DOCKER_COMPOSE) down -v --rmi local
+	@docker builder prune -f
 	@echo "✅ Cleaned up"
+
+docker-rebuild:
+	@echo "🚀 Starting a complete rebuild from scratch..."
+	@echo "   This will:"
+	@echo "     - Stop and remove all containers"
+	@echo "     - Delete volumes and local images"
+	@echo "     - Purge the Docker build cache"
+	@echo "     - Then build and start the stack"
+	@echo ""
+	@$(MAKE) docker-clean
+	@echo ""
+	@echo "🏗️  Rebuilding images (no cache) and starting services..."
+	@$(MAKE) docker-dev
+	@echo ""
+	@echo "✅ Rebuild complete. API running at http://localhost:$$(grep ^SERVER_PORT .env | cut -d '=' -f2)"
