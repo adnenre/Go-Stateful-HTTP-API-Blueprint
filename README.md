@@ -1,6 +1,8 @@
 # REST API Blueprint
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/adnenrebai/rest-api-blueprint)](https://hub.docker.com/r/adnenrebai/rest-api-blueprint)
+[![CI](https://github.com/adnenre/Go-REST-API-Blueprint/actions/workflows/ci.yml/badge.svg)](https://github.com/adnenre/Go-REST-API-Blueprint/actions/workflows/ci.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/adnenre/Go-REST-API-Blueprint)](https://goreportcard.com/report/github.com/adnenre/Go-REST-API-Blueprint)
 
 A reusable, contract‑first REST API template built with **pure Go (net/http)** and a **feature‑based layered architecture**.  
 Every feature follows the same pattern: `controller → service → repository → model → mapper → dto`.  
@@ -11,12 +13,65 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 - **Contract‑first** – Define your API in `openapi.yaml`, then generate type‑safe server stubs.
 - **No external web framework** – Only the standard library (`net/http`) and a code generator.
 - **Feature‑based layered architecture** – Each feature is isolated (controller, service, repository, model, mapper, dto, tests), making it easy to scale or split into microservices later.
-- **Built‑in health endpoint** – Enterprise‑ready health check with status, uptime, version, and optional dependency checks.
+- **Enterprise‑ready health endpoint** – Real checks for PostgreSQL and Redis, returns `200`/`503` with detailed `checks` map.
+- **Distributed rate limiting** – Redis‑based token bucket, per client IP, returns `429` with `Retry-After` headers.
+- **Request correlation** – `X-Request-Id` header automatically generated, stored in context, and logged.
+- **CORS & security headers** – Configurable CORS, plus `X-Content-Type-Options`, `X-Frame-Options`, HSTS, CSP, etc.
+- **RFC 7807 error handling** – Standardised `application/problem+json` error responses.
+- **Structured JSON logging** – `log/slog` with request ID, method, path, status, latency.
+- **Docker Compose** – Full stack (PostgreSQL, Redis, Go app) with hot reload (`air`).
+- **GitHub Actions CI/CD** – Tests with service containers, builds and pushes Docker image on tags.
 - **OpenAPI UI** – Swagger documentation embedded in the binary.
-- **Makefile** – Automates generation, scaffolding, running, testing, and cleaning.
+- **Makefile** – Automates generation, scaffolding, running, testing, Docker management.
 - **Microservice‑ready** – Designed to be deployed as a monolith today and split into microservices tomorrow with minimal refactoring.
 
-## 🐳 Running with Docker
+## ✅ Implemented Enterprise Features (Detailed)
+
+### 1. Project Infrastructure
+
+- [x] Structured configuration (`internal/config`) with `.env` support, fail‑fast validation, no hardcoded secrets.
+- [x] Structured JSON logging (`internal/logger`) using `log/slog`.
+- [x] Docker Compose stack with PostgreSQL, Redis, and Go app (development with hot reload using `air`).
+- [x] `Makefile` targets: `docker-up`, `docker-down`, `docker-logs`, `docker-dev`, `docker-build`, `docker-clean`, `docker-rebuild`.
+
+### 2. Database & Caching
+
+- [x] PostgreSQL connection with GORM, connection pooling (`internal/database`).
+- [x] Redis client (`internal/cache`) with health check.
+
+### 3. Health Endpoint (Enterprise‑grade)
+
+- [x] Real database ping (2s timeout) and Redis ping.
+- [x] Follows strict layered architecture: `controller → service → repository → model → mapper → dto`.
+- [x] Returns `200 OK` if all dependencies are healthy, `503 Service Unavailable` otherwise.
+- [x] Includes `checks` map with per‑dependency status (e.g., `database: "ok"`, `redis: "ok"`).
+- [x] Unit and integration tests.
+
+### 4. Middleware Pipeline
+
+- [x] **Request ID middleware** – generates/accepts `X-Request-ID` header, stores ID in context.
+- [x] **Logging middleware** – logs each request with `request_id`, method, path, status, latency, remote IP.
+- [x] **Distributed rate limiting** (Redis‑based) – per client IP, configurable via `RATE_LIMIT_PER_SEC`.
+- [x] Rate limiter returns `429 Too Many Requests` with `Retry-After` headers.
+- [x] **CORS middleware** – configurable origins, methods, headers, credentials (via environment variables).
+- [x] **Security headers middleware** – adds `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Strict-Transport-Security` (configurable HSTS max‑age), `Referrer-Policy`, `Content-Security-Policy`, cache control.
+- [x] Middleware order: `SecurityHeaders → CORS → RequestID → Logging → RateLimiter`.
+
+### 5. Observability & Correlation
+
+- [x] All logs are JSON (including request logs).
+- [x] Request ID correlates logs across a single request.
+
+### 6. Development Experience
+
+- [x] OpenAPI contract (`api/openapi.yaml`) as source of truth.
+- [x] Code generation (`oapi-codegen`) for server stubs.
+- [x] Scaffolding command (`make scaffold-feature`) for new vertical slices.
+- [x] Example health feature fully implemented and tested.
+
+---
+
+## 🐳 Quick Start with Docker
 
 You can run the pre‑built Docker image from Docker Hub:
 
@@ -28,37 +83,65 @@ docker run -p 8080:8080 adnenrebai/rest-api-blueprint:main
 Or use a specific version:
 
 ```bash
-docker pull adnenrebai/rest-api-blueprint:v1.0.0
-docker run -p 8080:8080 adnenrebai/rest-api-blueprint:v1.0.0
+docker pull adnenrebai/rest-api-blueprint:v2.0.0
+docker run -p 8080:8080 adnenrebai/rest-api-blueprint:v2.0.0
 ```
 
 Then test the health endpoint:
 
 ```bash
-curl http://localhost:8080/v1/health
+curl http://localhost:8080/api/v1/health
 ```
 
-> The Docker image is built and pushed automatically on every tag push (e.g., `v1.0.0`). The `:main` tag is updated on pushes to the `main` branch.
+Example response:
+
+```bash
+{
+  "status": "success",
+  "data": {
+    "status": "healthy",
+    "timestamp": "2026-04-24T10:00:00Z",
+    "uptime": "1m2s",
+    "version": "1.0.0",
+    "checks": {
+      "database": "ok",
+      "redis": "ok"
+    }
+  }
+}
+```
+
+> The Docker image is built and pushed automatically on every tag push (e.g., `v2.0.0`). The `:main` tag is updated on pushes to the `main` branch.
 
 ## 📁 Project Structure
 
-```
+```bash
 rest-api-blueprint/
 ├── api/
-│   └── openapi.yaml               # API contract (source of truth)
+│   └── openapi.yaml                    # API contract (source of truth)
 ├── internal/
-│   ├── gen/                       # Generated code (types, server interface, router)
+│   ├── gen/                            # Generated code (types, server interface)
 │   │   └── api.gen.go
-│   └── features/                  # Each feature is a vertical slice
-│       └── health/                # Health feature (fully implemented)
-│           ├── controller/        # HTTP handlers (implements gen.ServerInterface)
-│           ├── service/           # Business logic
-│           ├── repository/        # Data access (placeholder)
-│           ├── model/             # GORM entity (placeholder)
-│           ├── mapper/            # Converts model ↔ dto
-│           ├── dto/               # Request/response DTOs
-│           └── tests/             # Unit & integration tests
-├── main.go                        # Wires all features, starts server
+│   ├── config/                         # Configuration loading (.env + env vars)
+│   ├── logger/                         # Structured JSON logging (slog)
+│   ├── database/                       # GORM connection & connection pool
+│   ├── cache/                          # Redis client
+│   ├── errors/                         # RFC 7807 error handling (domain errors, problem details)
+│   ├── middleware/                     # Security, CORS, RequestID, Logging, RateLimiter
+│   └── features/                       # Vertical slices
+│       └── health/                     # Health feature (fully implemented)
+│           ├── controller/             # HTTP handlers (implements gen.ServerInterface)
+│           ├── service/                # Business logic (calls repository)
+│           ├── repository/             # Data access (real DB/Redis ping)
+│           ├── model/                  # GORM entity (optional)
+│           ├── mapper/                 # Model ↔ DTO conversion
+│           ├── dto/                    # Request/response DTOs
+│           └── tests/                  # Unit & integration tests
+├── .github/
+│   └── workflows/                      # CI/CD pipelines (ci.yml, cd.yml)
+├── docker-compose.yml                  # PostgreSQL, Redis, and Go app with hot reload
+├── .env.example                        # Template for environment variables
+├── main.go                             # Wires all features, starts server with middleware
 ├── go.mod
 ├── Makefile
 └── README.md
@@ -68,7 +151,7 @@ rest-api-blueprint/
 
 ### Prerequisites
 
-- Go 1.21+
+- Go 1.26+
 - `make` (optional, but recommended)
 - `oapi-codegen` (installed automatically by `make install-tools`)
 
@@ -89,20 +172,24 @@ make run
 Then test:
 
 ```bash
-curl http://localhost:8080/v1/health
+curl http://localhost:8080/api/v1/health
 ```
 
 Response:
 
 ```json
 {
-  "status": "success",
   "data": {
+    "checks": {
+      "database": "ok",
+      "redis": "ok"
+    },
     "status": "healthy",
-    "timestamp": "2026-04-22T12:34:56Z",
-    "uptime": "0s",
-    "version": "dev"
-  }
+    "timestamp": "2026-04-24T15:26:41.782319008Z",
+    "uptime": "26m28s",
+    "version": "2.0.0"
+  },
+  "status": "success"
 }
 ```
 
@@ -238,16 +325,25 @@ make test
 
 ## 🛠️ Makefile Commands
 
-| Command                        | Description                                                              |
-| ------------------------------ | ------------------------------------------------------------------------ |
-| `make install-tools`           | Installs `oapi-codegen` (once).                                          |
-| `make install-air`             | Installs `air` (live reload).                                            |
-| `make generate`                | Generates `internal/gen/api.gen.go` from `api/openapi.yaml`.             |
-| `make scaffold-feature name=X` | Creates full layered structure for a new feature `X` (never overwrites). |
-| `make run`                     | Generates stubs (if needed) and starts the server.                       |
-| `make dev`                     | Starts server with live reload (requires `air`).                         |
-| `make test`                    | Runs all unit and integration tests.                                     |
-| `make clean`                   | Removes generated files.                                                 |
+| Command                        | Description                                                      |
+| ------------------------------ | ---------------------------------------------------------------- |
+| `make install-tools`           | Installs `oapi-codegen` (required for generation).               |
+| `make install-air`             | Installs `air` (live reload).                                    |
+| `make generate`                | Regenerates `internal/gen/api.gen.go` from `openapi.yaml`.       |
+| `make scaffold-feature name=X` | Creates full layered structure for a new feature `X`.            |
+| `make run`                     | Runs the server locally (no live reload).                        |
+| `make dev`                     | Runs with live reload (`air`).                                   |
+| `make test`                    | Runs all unit and integration tests (requires PostgreSQL/Redis). |
+| `make clean`                   | Removes generated files.                                         |
+| `make docker-up`               | Starts services in detached mode.                                |
+| `make docker-down`             | Stops containers.                                                |
+| `make docker-logs`             | Tails logs from all services.                                    |
+| `make docker-dev`              | Starts stack with logs attached (press Ctrl+C to stop).          |
+| `make docker-build`            | Rebuilds the app image.                                          |
+| `make docker-clean`            | Removes containers, volumes, images, and build cache.            |
+| `make docker-rebuild`          | Full clean rebuild (runs `docker-clean` then `docker-dev`).      |
+
+---
 
 ## 🏁 Current Status & Roadmap
 
@@ -261,9 +357,21 @@ The blueprint is **production‑ready** as a foundation and **microservice‑rea
 - ✅ Feature‑based layered architecture (controller, service, repository, model, mapper, dto, tests)
 - ✅ Code generation via `oapi-codegen`
 - ✅ Scaffolding for new features
-- ✅ Health endpoint with unit and integration tests
-- ✅ Live reload (air) for development
-- ✅ Makefile for common tasks
+- ✅ Health endpoint with unit and integration tests (real PostgreSQL + Redis pings, 200/503 with `checks` map)
+- ✅ Live reload (`air`) for development
+- ✅ Makefile for common tasks (including Docker Compose targets)
+- ✅ Structured configuration (`.env` + env vars, fail‑fast validation)
+- ✅ Structured JSON logging (`log/slog` with request ID)
+- ✅ PostgreSQL connection (GORM, connection pooling)
+- ✅ Redis client (used for rate limiting and health checks)
+- ✅ Distributed rate limiting (Redis‑based, per IP, returns 429)
+- ✅ Request ID middleware (`X-Request-Id` header, context, logs)
+- ✅ CORS middleware (configurable via env)
+- ✅ Security headers middleware (XSS, clickjacking, HSTS, CSP, cache control)
+- ✅ RFC 7807 error handling (`application/problem+json`)
+- ✅ Docker Compose stack (PostgreSQL, Redis, Go app with hot reload)
+- ✅ GitHub Actions CI (tests with PostgreSQL/Redis service containers)
+- ✅ GitHub Actions CD (builds and pushes Docker image on tags)
 - ✅ README with clear instructions
 
 ### What you can build next
@@ -282,3 +390,8 @@ The architecture supports splitting without major refactoring. Each feature is i
 ## 📄 License
 
 MIT
+
+## Author
+
+- github: https://github.com/adnenre
+- website: https://adnenre.dev
