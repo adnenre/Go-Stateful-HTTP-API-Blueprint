@@ -4,22 +4,45 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/joho/godotenv"
 )
 
+// Config holds all application configuration values.
+// All sensitive values are required (no defaults) and are loaded from environment variables.
 type Config struct {
-	ServerPort         string
-	DatabaseURL        string
-	RedisURL           string
-	JWTSecret          string
-	JWTExpiry          time.Duration
-	RateLimitPerSecond int
+	// Server
+	ServerPort string // HTTP listen port (default 8080)
+
+	// Database
+	DatabaseURL string // PostgreSQL connection string (required)
+
+	// Cache
+	RedisURL string // Redis connection URL (required)
+
+	// JWT authentication
+	JWTSecret string        // Secret key for signing JWTs (required)
+	JWTExpiry time.Duration // Token expiration (required)
+
+	// Rate limiting
+	RateLimitPerSecond int // Requests allowed per second per client (required)
+
+	// CORS (Cross-Origin Resource Sharing)
+	CORSAllowedOrigins   []string // Allowed origins (e.g., "http://localhost:3000")
+	CORSAllowedMethods   []string // Allowed HTTP methods (e.g., "GET,POST")
+	CORSAllowedHeaders   []string // Allowed request headers (e.g., "Content-Type,Authorization")
+	CORSAllowCredentials bool     // Whether to allow credentials (cookies, auth headers)
+
+	// HSTS (HTTP Strict Transport Security)
+	HSTSMaxAge int // max-age in seconds (default 31536000)
 }
 
+// Load reads configuration from environment variables and .env file.
+// It fails fast if any required variable is missing.
 func Load() (*Config, error) {
-	// Load .env file for local development (ignore if not present)
+	// Load .env file for local development (ignored if not found, which is fine for production)
 	_ = godotenv.Load()
 
 	serverPort := getEnv("SERVER_PORT", "8080")
@@ -44,16 +67,31 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	// CORS settings: defaults are permissive for local development.
+	corsOrigins := getEnv("CORS_ALLOWED_ORIGINS", "*")
+	corsMethods := getEnv("CORS_ALLOWED_METHODS", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+	corsHeaders := getEnv("CORS_ALLOWED_HEADERS", "Content-Type, Authorization, X-Request-ID")
+	corsCredentials := getEnvBool("CORS_ALLOW_CREDENTIALS", false)
+
+	// HSTS max-age (default 1 year = 31536000 seconds)
+	hstsMaxAge := getEnvInt("HSTS_MAX_AGE", 31536000)
+
 	return &Config{
-		ServerPort:         serverPort,
-		DatabaseURL:        databaseURL,
-		RedisURL:           redisURL,
-		JWTSecret:          jwtSecret,
-		JWTExpiry:          jwtExpiry,
-		RateLimitPerSecond: rateLimit,
+		ServerPort:           serverPort,
+		DatabaseURL:          databaseURL,
+		RedisURL:             redisURL,
+		JWTSecret:            jwtSecret,
+		JWTExpiry:            jwtExpiry,
+		RateLimitPerSecond:   rateLimit,
+		CORSAllowedOrigins:   strings.Split(corsOrigins, ","),
+		CORSAllowedMethods:   strings.Split(corsMethods, ","),
+		CORSAllowedHeaders:   strings.Split(corsHeaders, ","),
+		CORSAllowCredentials: corsCredentials,
+		HSTSMaxAge:           hstsMaxAge,
 	}, nil
 }
 
+// getEnv returns value or default if not set.
 func getEnv(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
@@ -61,6 +99,17 @@ func getEnv(key, defaultVal string) string {
 	return defaultVal
 }
 
+// getEnvInt returns integer value or default if not set or invalid.
+func getEnvInt(key string, defaultVal int) int {
+	if val := os.Getenv(key); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			return i
+		}
+	}
+	return defaultVal
+}
+
+// getEnvRequired returns error if the env var is empty.
 func getEnvRequired(key string) (string, error) {
 	val := os.Getenv(key)
 	if val == "" {
@@ -69,6 +118,7 @@ func getEnvRequired(key string) (string, error) {
 	return val, nil
 }
 
+// getEnvDurationRequired parses a duration from env; error if empty or invalid.
 func getEnvDurationRequired(key string) (time.Duration, error) {
 	val := os.Getenv(key)
 	if val == "" {
@@ -81,6 +131,7 @@ func getEnvDurationRequired(key string) (time.Duration, error) {
 	return d, nil
 }
 
+// getEnvIntRequired parses an integer from env; error if empty or invalid.
 func getEnvIntRequired(key string) (int, error) {
 	val := os.Getenv(key)
 	if val == "" {
@@ -91,4 +142,15 @@ func getEnvIntRequired(key string) (int, error) {
 		return 0, fmt.Errorf("invalid integer for %s: %w", key, err)
 	}
 	return i, nil
+}
+
+// getEnvBool parses a boolean from env; defaults to defaultVal if not set or invalid.
+func getEnvBool(key string, defaultVal bool) bool {
+	if val := os.Getenv(key); val != "" {
+		b, err := strconv.ParseBool(val)
+		if err == nil {
+			return b
+		}
+	}
+	return defaultVal
 }
