@@ -8,13 +8,32 @@ import (
 	"rest-api-blueprint/internal/cache"
 	"rest-api-blueprint/internal/config"
 	"rest-api-blueprint/internal/database"
-	"rest-api-blueprint/internal/features/health/controller"
-	"rest-api-blueprint/internal/features/health/repository"
-	"rest-api-blueprint/internal/features/health/service"
+	adminController "rest-api-blueprint/internal/features/admin/controller"
+	adminRepository "rest-api-blueprint/internal/features/admin/repository"
+	adminService "rest-api-blueprint/internal/features/admin/service"
+	"rest-api-blueprint/internal/features/auth"
+	authController "rest-api-blueprint/internal/features/auth/controller"
+	authRepository "rest-api-blueprint/internal/features/auth/repository"
+	authService "rest-api-blueprint/internal/features/auth/service"
+	healthController "rest-api-blueprint/internal/features/health/controller"
+	healthRepository "rest-api-blueprint/internal/features/health/repository"
+	healthService "rest-api-blueprint/internal/features/health/service"
+	"rest-api-blueprint/internal/features/user"
+	userController "rest-api-blueprint/internal/features/user/controller"
+	userRepository "rest-api-blueprint/internal/features/user/repository"
+	userService "rest-api-blueprint/internal/features/user/service"
 	"rest-api-blueprint/internal/gen"
 	"rest-api-blueprint/internal/logger"
 	"rest-api-blueprint/internal/middleware"
 )
+
+// combinedServer implements all generated ServerInterface methods by embedding the feature controllers.
+type combinedServer struct {
+	*healthController.HealthController
+	*authController.AuthController
+	*userController.UserController
+	*adminController.AdminController
+}
 
 func main() {
 	// ============================================================
@@ -34,62 +53,93 @@ func main() {
 	// ============================================================
 	// 3. CONNECT TO DATABASE (PostgreSQL via GORM)
 	// ============================================================
-	if err := database.Connect(cfg.DatabaseURL); err != nil {
-		slog.Error("database connection failed", "error", err)
-		os.Exit(1)
-	}
-	slog.Info("database connected")
+	database.Connect(cfg.DatabaseURL)
 
 	// ============================================================
 	// 4. CONNECT TO REDIS (for rate limiting, health checks, cache)
 	// ============================================================
-	if err := cache.InitRedis(cfg.RedisURL); err != nil {
-		slog.Error("redis connection failed", "error", err)
-		os.Exit(1)
-	}
-	slog.Info("redis connected", "url", cfg.RedisURL)
+	cache.InitRedis(cfg.RedisURL)
 
 	// ============================================================
-	// 5. SETUP RATE LIMITING (distributed, using Redis)
+	// 5. RUN DATABASE MIGRATIONS (users and preferences tables)
+	// ============================================================
+	auth.Migrate() // creates/updates users table
+	user.Migrate() // creates/updates user_preferences table
+
+	// ============================================================
+	// 6. WIRE DEPENDENCIES FOR ALL FEATURES
+	// ============================================================
+	// Health feature
+	healthRepo := healthRepository.NewRepository(database.DB, cache.Client)
+	healthSvc := healthService.NewService(healthRepo)
+	healthCtrl := healthController.NewHealthController(healthSvc)
+
+	// Auth feature
+	authRepo := authRepository.NewRepository(database.DB)
+	authSvc := authService.NewService(authRepo, cfg)
+	authCtrl := authController.NewAuthController(authSvc)
+
+	// User feature
+	userRepo := userRepository.NewRepository(database.DB)
+	userSvc := userService.NewService(userRepo)
+	userCtrl := userController.NewUserController(userSvc)
+
+	// Admin feature
+	adminRepo := adminRepository.NewRepository(database.DB)
+	adminSvc := adminService.NewService(adminRepo)
+	adminCtrl := adminController.NewAdminController(adminSvc)
+
+	// ============================================================
+	// 7. COMBINE ALL CONTROLLERS INTO A SINGLE SERVER INTERFACE
+	// ============================================================
+	server := &combinedServer{
+		HealthController: healthCtrl,
+		AuthController:   authCtrl,
+		UserController:   userCtrl,
+		AdminController:  adminCtrl,
+	}
+
+	// ============================================================
+	// 8. REGISTER ROUTES (generated from OpenAPI spec)
+	// ============================================================
+	mux := http.NewServeMux()
+	handler := gen.HandlerFromMux(server, mux)
+
+	// ============================================================
+	// 9. SETUP RATE LIMITING
 	// ============================================================
 	rateLimiter := middleware.NewRateLimiter(cache.Client, cfg.RateLimitPerSecond)
 
 	// ============================================================
-	// 6. WIRE DEPENDENCIES FOR THE HEALTH FEATURE
-	// ============================================================
-	healthRepo := repository.NewRepository(database.DB, cache.Client)
-	healthSvc := service.NewService(healthRepo)
-	healthCtrl := controller.NewHealthController(healthSvc)
-
-	// ============================================================
-	// 7. REGISTER ROUTES (generated from OpenAPI spec)
-	// ============================================================
-	mux := http.NewServeMux()
-	handler := gen.HandlerFromMux(healthCtrl, mux)
-
-	// ============================================================
-	// 8. APPLY MIDDLEWARES – ORDER MATTERS!
+	// 10. APPLY MIDDLEWARES – ORDER MATTERS!
 	//
-	// The middlewares are applied from innermost to outermost.
-	// Execution order (outermost first) will be:
-	//   SecurityHeaders → CORS → RequestID → Logging → RateLimiter → baseHandler
+	// Execution order (outermost first):
+	//   SecurityHeaders → CORS → RequestID → JWTAuth → Logging → RateLimiter → baseHandler
 	//
-	// This ensures that RequestID and Logging run before the RateLimiter,
-	// so even when a request is rate‑limited (429), the X-Request-Id header
-	// is already set, the request ID is logged, and the error response's
-	// 'instance' field contains the correct value.
+	// Public paths that do NOT require JWT:
+	//   - /api/v1/health
+	//   - /api/v1/auth/login
+	//   - /api/v1/auth/register
 	// ============================================================
+	publicPaths := map[string]bool{
+		"/api/v1/health":        true,
+		"/api/v1/auth/login":    true,
+		"/api/v1/auth/register": true,
+	}
 
-	// 8.1 Rate limiting (innermost)
+	// 10.1 Rate limiting (innermost)
 	handler = rateLimiter.Middleware(middleware.DefaultIPKeyFunc)(handler)
 
-	// 8.2 Logging – logs request method, path, status, latency, and request ID
+	// 10.2 Logging – logs request method, path, status, latency, and request ID
 	handler = middleware.Logging(handler)
 
-	// 8.3 Request ID – generates/forwards X-Request-Id and stores it in context
+	// 10.3 JWT authentication – extracts and validates token, injects claims into context
+	handler = middleware.JWTAuthMiddleware(cfg, publicPaths)(handler)
+
+	// 10.4 Request ID – generates/forwards X-Request-Id and stores it in context
 	handler = middleware.RequestIDMiddleware(handler)
 
-	// 8.4 CORS – handles preflight requests and sets CORS headers
+	// 10.5 CORS – handles preflight requests and sets CORS headers
 	corsMiddleware := middleware.NewCORS(middleware.CORSConfig{
 		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   cfg.CORSAllowedMethods,
@@ -98,14 +148,14 @@ func main() {
 	})
 	handler = corsMiddleware(handler)
 
-	// 8.5 Security headers (outermost) – adds X‑Content‑Type‑Options, etc.
+	// 10.6 Security headers (outermost) – adds X‑Content‑Type‑Options, etc.
 	securityMiddleware := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 		HSTSMaxAge: cfg.HSTSMaxAge,
 	})
 	handler = securityMiddleware(handler)
 
 	// ============================================================
-	// 9. START HTTP SERVER
+	// 11. START HTTP SERVER
 	// ============================================================
 	addr := ":" + cfg.ServerPort
 	slog.Info("server starting", "address", addr)

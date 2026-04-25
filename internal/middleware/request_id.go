@@ -8,9 +8,9 @@ import (
 	"github.com/google/uuid"
 )
 
-type contextKey string
+type ContextKey string
 
-const requestIDKey contextKey = "request_id"
+const RequestIDKey ContextKey = "request_id"
 
 func RequestIDMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +24,7 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 		w.Header().Set("X-Request-ID", requestID)
 		r.Header.Set("X-Request-ID", requestID)
 		slog.Info("[2] Set response and request headers", "responseHeader", w.Header().Get("X-Request-ID"), "requestHeader", r.Header.Get("X-Request-ID"))
-		ctx := context.WithValue(r.Context(), requestIDKey, requestID)
+		ctx := context.WithValue(r.Context(), RequestIDKey, requestID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
@@ -32,7 +32,7 @@ func RequestIDMiddleware(next http.Handler) http.Handler {
 // GetRequestID extracts the request ID from the request.
 // It first checks the context, then falls back to the header.
 func GetRequestID(r *http.Request) string {
-	if id, ok := r.Context().Value(requestIDKey).(string); ok && id != "" {
+	if id, ok := r.Context().Value(RequestIDKey).(string); ok && id != "" {
 		slog.Info("[3] GetRequestID: from context", "id", id)
 		return id
 	}

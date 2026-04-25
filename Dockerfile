@@ -18,6 +18,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o main .
 
 # Final stage
 FROM alpine:3.22
+RUN apk update && apk upgrade --no-cache
 RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 COPY --from=builder /app/main .

@@ -10,9 +10,13 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
-	"rest-api-blueprint/internal/cache"
-	"rest-api-blueprint/internal/database"
+	"github.com/redis/go-redis/v9"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+	"gorm.io/gorm/logger"
+
 	"rest-api-blueprint/internal/features/health/controller"
 	"rest-api-blueprint/internal/features/health/repository"
 	"rest-api-blueprint/internal/features/health/service"
@@ -35,7 +39,7 @@ func TestHealthIntegration(t *testing.T) {
 	envPath := filepath.Join(projectRoot, ".env")
 	_ = godotenv.Load(envPath)
 
-	// Get credentials
+	// Get PostgreSQL credentials
 	user := os.Getenv("POSTGRES_USER")
 	password := os.Getenv("POSTGRES_PASSWORD")
 	dbname := os.Getenv("POSTGRES_DB")
@@ -48,28 +52,40 @@ func TestHealthIntegration(t *testing.T) {
 	}
 	dbURL := fmt.Sprintf("postgres://%s:%s@localhost:%s/%s?sslmode=disable", user, password, port, dbname)
 
-	// Connect to DB
-	if err := database.Connect(dbURL); err != nil {
+	// Manually connect to PostgreSQL (without exiting on error)
+	gormDB, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{
+		Logger: logger.Default.LogMode(logger.Silent),
+	})
+	if err != nil {
 		t.Skipf("database unavailable: %v", err)
 	}
-	defer func() {
-		if db, _ := database.DB.DB(); db != nil {
-			db.Close()
-		}
-	}()
+	sqlDB, err := gormDB.DB()
+	if err != nil {
+		t.Skipf("failed to get database connection: %v", err)
+	}
+	defer sqlDB.Close()
+	sqlDB.SetMaxIdleConns(10)
+	sqlDB.SetMaxOpenConns(100)
+	sqlDB.SetConnMaxLifetime(time.Hour)
 
-	// Connect to Redis
+	// Get Redis address
 	redisAddr := os.Getenv("REDIS_URL")
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
 	}
-	if err := cache.InitRedis(redisAddr); err != nil {
+	// Manually connect to Redis
+	redisClient := redis.NewClient(&redis.Options{
+		Addr: redisAddr,
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
 		t.Skipf("redis unavailable: %v", err)
 	}
-	// No need to close Redis client globally
+	defer redisClient.Close()
 
-	// Wire dependencies
-	repo := repository.NewRepository(database.DB, cache.Client)
+	// Wire dependencies using the test connections
+	repo := repository.NewRepository(gormDB, redisClient)
 	svc := service.NewService(repo)
 	ctrl := controller.NewHealthController(svc)
 

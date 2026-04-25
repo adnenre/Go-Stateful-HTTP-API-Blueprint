@@ -1,0 +1,140 @@
+### REST API Blueprint - Integration Tests
+### Base URL for the API
+@baseUrl = http://localhost:8080/api/v1
+### Variable to store JWT token after login
+@authToken = {{login.response.body.$.token}}
+### Variable to store admin JWT token (adjust after admin login)
+@adminToken = {{adminLogin.response.body.$.token}}
+
+### ----------------------------------------
+### 1. Health Check (public)
+### ----------------------------------------
+GET {{baseUrl}}/health
+Content-Type: application/json
+
+### ----------------------------------------
+### 2. User Registration
+### ----------------------------------------
+# @name register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+    "email": "testuser@example.com",
+    "password": "test123",
+    "username": "testuser"
+    
+}
+
+### ----------------------------------------
+### 2. admin Registration
+### ----------------------------------------
+# @name register
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+    "email": "admin@example.com",
+    "password": "admin123",
+    "username": "admin"
+    
+}
+// docker exec -it rest_api_postgres psql -U postgres -d rest_api_blueprint -c "UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';"
+### ----------------------------------------
+### 3. User Login (obtain JWT)
+### ----------------------------------------
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+    "email": "testuser@example.com",
+    "password": "test123"
+}
+
+### ----------------------------------------
+### 4. Get Current User Profile (Protected)
+### ----------------------------------------
+GET {{baseUrl}}/users/me
+Authorization: Bearer {{authToken}}
+
+### ----------------------------------------
+### 5. Update User Preferences (Protected)
+### ----------------------------------------
+PATCH {{baseUrl}}/users/me/preferences
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+    "notifications": true,
+    "language": "fr"
+}
+
+### ----------------------------------------
+### 6. Admin Login (Assuming admin user exists)
+###    Create an admin user manually (e.g., via DB) or promote a user.
+###    For testing, we assume an admin with email admin@example.com and password admin123.
+### ----------------------------------------
+# @name adminLogin
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+    "email": "admin@example.com",
+    "password": "admin123"
+}
+
+### ----------------------------------------
+### 7. Admin: List all users (Admin only)
+### ----------------------------------------
+GET {{baseUrl}}/admin/users?limit=10&offset=0
+Authorization: Bearer {{adminToken}}
+
+### ----------------------------------------
+### 8. Admin: Create a new user (Admin only)
+### ----------------------------------------
+# @name adminCreateUser
+POST {{baseUrl}}/admin/users
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+    "email": "newuser@example.com",
+    "password": "newpass123",
+    "role": "user",
+    "username": "newuser",
+    "avatar": null
+}
+
+### Save the created user ID for later use
+@newUserId = {{adminCreateUser.response.body.$.id}}
+
+### ----------------------------------------
+### 9. Admin: Get user by ID (Admin only)
+### ----------------------------------------
+GET {{baseUrl}}/admin/users/{{newUserId}}
+Authorization: Bearer {{adminToken}}
+
+### ----------------------------------------
+### 10. Admin: Update user (Admin only)
+### ----------------------------------------
+PUT {{baseUrl}}/admin/users/{{newUserId}}
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+    "username": "updateduser",
+    "role": "admin"
+}
+
+### ----------------------------------------
+### 11. Admin: Delete user (Admin only)
+### ----------------------------------------
+DELETE {{baseUrl}}/admin/users/{{newUserId}}
+Authorization: Bearer {{adminToken}}
+
+### ----------------------------------------
+### 12. Verify deletion (should return 404)
+### ----------------------------------------
+GET {{baseUrl}}/admin/users/{{newUserId}}
+Authorization: Bearer {{adminToken}}

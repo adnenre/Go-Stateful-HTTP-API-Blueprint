@@ -53,3 +53,5 @@ ehthumbs.db
 *.db
 *.sqlite
 .env
+*.sh
+*steps.md
