@@ -14,6 +14,9 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 - **No external web framework** – Only the standard library (`net/http`) and a code generator.
 - **Feature‑based layered architecture** – Each feature is isolated (controller, service, repository, model, mapper, dto, tests), making it easy to scale or split into microservices later.
 - **Enterprise‑ready health endpoint** – Real checks for PostgreSQL and Redis, returns `200`/`503` with detailed `checks` map.
+- **JWT authentication** – Register, login, and protect routes with JWT tokens (access tokens).
+- **User profile & preferences** – `GET /users/me` and `PATCH /users/me/preferences`.
+- **Admin user management** – Full CRUD on users (`/admin/users`) with role‑based access (admin only).
 - **Distributed rate limiting** – Redis‑based token bucket, per client IP, returns `429` with `Retry-After` headers.
 - **Request correlation** – `X-Request-Id` header automatically generated, stored in context, and logged.
 - **CORS & security headers** – Configurable CORS, plus `X-Content-Type-Options`, `X-Frame-Options`, HSTS, CSP, etc.
@@ -47,7 +50,19 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 - [x] Includes `checks` map with per‑dependency status (e.g., `database: "ok"`, `redis: "ok"`).
 - [x] Unit and integration tests.
 
-### 4. Middleware Pipeline
+### 4. Authentication & User Management
+
+- [x] **JWT utility** – generate/validate tokens (`internal/auth/jwt.go`).
+- [x] **JWT authentication middleware** – protects routes, skips public paths, injects claims into context.
+- [x] **User registration** – `POST /api/v1/auth/register` (email, username, password, optional avatar).
+- [x] **User login** – `POST /api/v1/auth/login` returns JWT.
+- [x] **User profile** – `GET /api/v1/users/me` (protected).
+- [x] **User preferences** – `PATCH /api/v1/users/me/preferences` (stored in separate table).
+- [x] **Admin CRUD** – full user management under `/api/v1/admin/users` (list, create, get by ID, update, delete) – only accessible with `admin` role.
+- [x] **Password hashing** – bcrypt.
+- [x] **Role‑based access control** – `admin` vs `user` (checked in admin endpoints).
+
+### 5. Middleware Pipeline
 
 - [x] **Request ID middleware** – generates/accepts `X-Request-ID` header, stores ID in context.
 - [x] **Logging middleware** – logs each request with `request_id`, method, path, status, latency, remote IP.
@@ -55,14 +70,14 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 - [x] Rate limiter returns `429 Too Many Requests` with `Retry-After` headers.
 - [x] **CORS middleware** – configurable origins, methods, headers, credentials (via environment variables).
 - [x] **Security headers middleware** – adds `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Strict-Transport-Security` (configurable HSTS max‑age), `Referrer-Policy`, `Content-Security-Policy`, cache control.
-- [x] Middleware order: `SecurityHeaders → CORS → RequestID → Logging → RateLimiter`.
+- [x] Middleware order: `SecurityHeaders → CORS → RequestID → JWTAuth → Logging → RateLimiter`.
 
-### 5. Observability & Correlation
+### 6. Observability & Correlation
 
 - [x] All logs are JSON (including request logs).
 - [x] Request ID correlates logs across a single request.
 
-### 6. Development Experience
+### 7. Development Experience
 
 - [x] OpenAPI contract (`api/openapi.yaml`) as source of truth.
 - [x] Code generation (`oapi-codegen`) for server stubs.
@@ -83,8 +98,8 @@ docker run -p 8080:8080 adnenrebai/rest-api-blueprint:main
 Or use a specific version:
 
 ```bash
-docker pull adnenrebai/rest-api-blueprint:v2.0.0
-docker run -p 8080:8080 adnenrebai/rest-api-blueprint:v2.0.0
+docker pull adnenrebai/rest-api-blueprint:v3.0.0
+docker run -p 8080:8080 adnenrebai/rest-api-blueprint:v3.0.0
 ```
 
 Then test the health endpoint:
@@ -102,7 +117,7 @@ Example response:
     "status": "healthy",
     "timestamp": "2026-04-24T10:00:00Z",
     "uptime": "1m2s",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "checks": {
       "database": "ok",
       "redis": "ok"
@@ -112,6 +127,23 @@ Example response:
 ```
 
 > The Docker image is built and pushed automatically on every tag push (e.g., `v2.0.0`). The `:main` tag is updated on pushes to the `main` branch.
+
+### 🔐 Creating an Admin User
+
+To test admin endpoints, you need a user with the `admin` role. By default, registration creates users with role `user`. Promote a user to admin using the database (while the stack is running):
+
+```bash
+# Register a user first (or use an existing one)
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"admin@example.com","password":"admin123","username":"admin"}'
+
+# Then update the role via PostgreSQL
+docker exec -it rest_api_postgres psql -U postgres -d rest_api_blueprint \
+  -c "UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';"
+```
+
+Now you can log in as `admin@example.com` and obtain an admin token to call the admin endpoints.
 
 ## 📁 Project Structure
 
@@ -126,17 +158,14 @@ rest-api-blueprint/
 │   ├── logger/                         # Structured JSON logging (slog)
 │   ├── database/                       # GORM connection & connection pool
 │   ├── cache/                          # Redis client
+│   ├── auth/                           # JWT utility (shared)
 │   ├── errors/                         # RFC 7807 error handling (domain errors, problem details)
-│   ├── middleware/                     # Security, CORS, RequestID, Logging, RateLimiter
+│   ├── middleware/                     # Security, CORS, RequestID, JWTAuth, Logging, RateLimiter
 │   └── features/                       # Vertical slices
-│       └── health/                     # Health feature (fully implemented)
-│           ├── controller/             # HTTP handlers (implements gen.ServerInterface)
-│           ├── service/                # Business logic (calls repository)
-│           ├── repository/             # Data access (real DB/Redis ping)
-│           ├── model/                  # GORM entity (optional)
-│           ├── mapper/                 # Model ↔ DTO conversion
-│           ├── dto/                    # Request/response DTOs
-│           └── tests/                  # Unit & integration tests
+│       ├── health/                     # Health endpoint (implemented)
+│       ├── auth/                       # User registration, login (implemented)
+│       ├── user/                       # Profile & preferences (implemented)
+│       └── admin/                      # Admin CRUD on users (implemented)
 ├── .github/
 │   └── workflows/                      # CI/CD pipelines (ci.yml, cd.yml)
 ├── docker-compose.yml                  # PostgreSQL, Redis, and Go app with hot reload
@@ -195,37 +224,129 @@ Response:
 
 Swagger UI is available at [http://localhost:8080/swagger/](http://localhost:8080/swagger/).
 
-## 🧱 Adding a New Feature (e.g., `auth`)
+### Test Authentication & User Endpoints
+
+```bash
+# Register a user
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"pass123","username":"testuser"}'
+
+# Login to get a JWT token
+curl -X POST http://localhost:8080/api/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"pass123"}'
+
+# Use the token to access protected endpoints
+TOKEN="your.jwt.token"
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/users/me
+```
+
+## 🧱 Adding a New Feature (example: `products`)
 
 The workflow is **contract‑first** – always start with the OpenAPI specification.
 
 ### Step 1: Add Endpoints to `api/openapi.yaml`
 
-Add your new paths and schemas. Example for a login endpoint:
+Add your new paths and schemas. Example for a product catalog:
 
 ```yaml
 paths:
-  /v1/auth/login:
-    post:
-      summary: Login user
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                username:
-                  type: string
-                password:
-                  type: string
+  /v1/products:
+    get:
+      summary: List all products
+      operationId: listProducts
       responses:
         "200":
           description: OK
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/LoginResponse"
+                type: array
+                items:
+                  $ref: "#/components/schemas/Product"
+    post:
+      summary: Create a new product
+      operationId: createProduct
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewProduct"
+      responses:
+        "201":
+          description: Created
+  /v1/products/{id}:
+    get:
+      summary: Get a product by ID
+      operationId: getProduct
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+    put:
+      summary: Update a product
+      operationId: updateProduct
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateProduct"
+      responses:
+        "200":
+          description: Updated
+    delete:
+      summary: Delete a product
+      operationId: deleteProduct
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Deleted
+
+components:
+  schemas:
+    Product:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        price:
+          type: number
+    NewProduct:
+      type: object
+      required: [name, price]
+      properties:
+        name:
+          type: string
+        price:
+          type: number
+    UpdateProduct:
+      type: object
+      properties:
+        name:
+          type: string
+        price:
+          type: number
 ```
 
 ### Step 2: Generate Server Stubs
@@ -237,18 +358,18 @@ make generate
 This updates `internal/gen/api.gen.go` with:
 
 - New Go structs for request/response DTOs.
-- New methods in `ServerInterface` (e.g., `PostV1AuthLogin`).
+- New methods in `ServerInterface` (e.g., `ListProducts`, `CreateProduct`, etc.).
 
 ### Step 3: Scaffold the Feature Folder
 
 ```bash
-make scaffold-feature name=auth
+make scaffold-feature name=products
 ```
 
-This creates the full layered structure for `auth`:
+This creates the full layered structure for `products`:
 
 ```
-internal/features/auth/
+internal/features/products/
 ├── controller/handler.go
 ├── service/interface.go
 ├── service/service.go
@@ -265,8 +386,8 @@ internal/features/auth/
 
 ### Step 4: Implement the Layers
 
-1. **Define the model** – `internal/features/auth/model/entity.go` (GORM entity).
-2. **Implement the repository** – `repository/gorm.go` with database operations.
+1. **Define the model** – `internal/features/products/model/entity.go` (GORM entity).
+2. **Implement the repository** – `repository/gorm.go` with database operations (CRUD).
 3. **Write the service** – `service/service.go` (business logic).
 4. **Create the mapper** – `mapper/mapper.go` to convert between model and DTO.
 5. **Implement the controller** – `controller/handler.go` (satisfies `gen.ServerInterface`).
@@ -278,20 +399,25 @@ package controller
 
 import (
     "net/http"
-    "rest-api-blueprint/internal/features/auth/service"
+    "rest-api-blueprint/internal/features/products/service"
     "rest-api-blueprint/internal/gen"
 )
 
-type AuthController struct {
+type ProductsController struct {
     svc service.Service
 }
 
-func NewAuthController(svc service.Service) *AuthController {
-    return &AuthController{svc: svc}
+func NewProductsController(svc service.Service) *ProductsController {
+    return &ProductsController{svc: svc}
 }
 
-func (c *AuthController) PostV1AuthLogin(w http.ResponseWriter, r *http.Request) {
-    // Parse request, call service, map response using mapper
+func (c *ProductsController) ListProducts(w http.ResponseWriter, r *http.Request) {
+    products, err := c.svc.List(r.Context())
+    if err != nil {
+        // use errors.WriteProblemSimple or domain error
+        return
+    }
+    // map and respond
 }
 ```
 
@@ -299,17 +425,18 @@ func (c *AuthController) PostV1AuthLogin(w http.ResponseWriter, r *http.Request)
 
 ```go
 // Inside main()
-authRepo := repository.NewRepository()
-authSvc := service.NewService(authRepo)
-authCtrl := controller.NewAuthController(authSvc)
-gen.HandlerFromMux(authCtrl, mux)
+productsRepo := repository.NewRepository(database.DB)
+productsSvc := service.NewService(productsRepo)
+productsCtrl := controller.NewProductsController(productsSvc)
+// Add to combined server struct
 ```
 
 ### Step 6: Run and Test
 
 ```bash
 make run
-curl -X POST http://localhost:8080/v1/auth/login -d '{"username":"alice","password":"pass"}' -H "Content-Type: application/json"
+curl http://localhost:8080/v1/products
+curl -X POST http://localhost:8080/v1/products -d '{"name":"Laptop","price":999}' -H "Content-Type: application/json"
 ```
 
 ## 🧪 Testing
@@ -347,8 +474,8 @@ make test
 
 ## 🏁 Current Status & Roadmap
 
-The **health feature** is fully implemented and serves as a working example.  
-The blueprint is **production‑ready** as a foundation and **microservice‑ready** – you can build new features (auth, scores, leaderboard) using the same pattern.
+The **health, auth, user, and admin features** are fully implemented and serve as working examples.  
+The blueprint is **production‑ready** as a foundation and **microservice‑ready** – you can build new features (products, scores, leaderboard, etc.) using the same pattern.
 
 ### What’s already done
 
@@ -357,7 +484,12 @@ The blueprint is **production‑ready** as a foundation and **microservice‑rea
 - ✅ Feature‑based layered architecture (controller, service, repository, model, mapper, dto, tests)
 - ✅ Code generation via `oapi-codegen`
 - ✅ Scaffolding for new features
-- ✅ Health endpoint with unit and integration tests (real PostgreSQL + Redis pings, 200/503 with `checks` map)
+- ✅ Health endpoint (`/api/v1/health`) with unit and integration tests (real PostgreSQL + Redis pings, 200/503 with `checks` map)
+- ✅ **Authentication**: `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JWT tokens, bcrypt password hashing)
+- ✅ **User profile**: `GET /api/v1/users/me` (protected, returns user details)
+- ✅ **User preferences**: `PATCH /api/v1/users/me/preferences` (store/update preferences)
+- ✅ **Admin user management**: Full CRUD on `/api/v1/admin/users` (list, create, get by ID, update, delete) – only accessible with `admin` role
+- ✅ JWT authentication middleware (skips public paths, injects claims into context)
 - ✅ Live reload (`air`) for development
 - ✅ Makefile for common tasks (including Docker Compose targets)
 - ✅ Structured configuration (`.env` + env vars, fail‑fast validation)
@@ -376,8 +508,11 @@ The blueprint is **production‑ready** as a foundation and **microservice‑rea
 
 ### What you can build next
 
-- **Auth** – user registration, login, JWT cookies
-- **Admin** – user management with RBAC
+- **OTP verification and password reset** – enhance auth with email-based flows.
+- **Pagination, filtering, sorting** – for list endpoints.
+- **Prometheus metrics** – monitor API performance.
+- **OpenTelemetry tracing** – distributed tracing with Jaeger.
+- **Webhooks** – event notifications to external services.
 
 ### When to split into microservices
 
