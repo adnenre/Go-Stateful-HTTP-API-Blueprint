@@ -6,15 +6,35 @@
 package gen
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/oapi-codegen/runtime"
+	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-// Defines values for HealthResponseDataStatus.
 const (
+	BearerAuthScopes = "BearerAuth.Scopes"
+	// Defines values for HealthResponseStatus.
+
 	Healthy   HealthResponseDataStatus = "healthy"
 	Unhealthy HealthResponseDataStatus = "unhealthy"
+	// Defines values for HealthResponseDataStatus.
+	Error   HealthResponseStatus = "error"
+	Success HealthResponseStatus = "success"
+	// Defines values for UserProfileRole.
+	UserProfileRoleAdmin UserProfileRole = "admin"
+	UserProfileRoleUser  UserProfileRole = "user"
+
+	// Defines values for CreateUserJSONBodyRole.
+	CreateUserJSONBodyRoleAdmin CreateUserJSONBodyRole = "admin"
+	CreateUserJSONBodyRoleUser  CreateUserJSONBodyRole = "user"
+
+	// Defines values for UpdateUserJSONBodyRole.
+	Admin UpdateUserJSONBodyRole = "admin"
+	User  UpdateUserJSONBodyRole = "user"
 )
 
 // Valid indicates whether the value is a known member of the HealthResponseDataStatus enum.
@@ -29,18 +49,48 @@ func (e HealthResponseDataStatus) Valid() bool {
 	}
 }
 
-// Defines values for HealthResponseStatus.
-const (
-	Error   HealthResponseStatus = "error"
-	Success HealthResponseStatus = "success"
-)
-
 // Valid indicates whether the value is a known member of the HealthResponseStatus enum.
 func (e HealthResponseStatus) Valid() bool {
 	switch e {
 	case Error:
 		return true
 	case Success:
+		return true
+	default:
+		return false
+	}
+}
+
+// Valid indicates whether the value is a known member of the UserProfileRole enum.
+func (e UserProfileRole) Valid() bool {
+	switch e {
+	case UserProfileRoleAdmin:
+		return true
+	case UserProfileRoleUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Valid indicates whether the value is a known member of the CreateUserJSONBodyRole enum.
+func (e CreateUserJSONBodyRole) Valid() bool {
+	switch e {
+	case CreateUserJSONBodyRoleAdmin:
+		return true
+	case CreateUserJSONBodyRoleUser:
+		return true
+	default:
+		return false
+	}
+}
+
+// Valid indicates whether the value is a known member of the UpdateUserJSONBodyRole enum.
+func (e UpdateUserJSONBodyRole) Valid() bool {
+	switch e {
+	case Admin:
+		return true
+	case User:
 		return true
 	default:
 		return false
@@ -76,11 +126,127 @@ type HealthResponseDataStatus string
 // HealthResponseStatus Overall status of the API response envelope
 type HealthResponseStatus string
 
+// UserPreferences defines model for UserPreferences.
+type UserPreferences struct {
+	Language      *string `json:"language,omitempty"`
+	Notifications *bool   `json:"notifications,omitempty"`
+}
+
+// UserProfile defines model for UserProfile.
+type UserProfile struct {
+	Id       string `json:"id"`
+	Username string `json:"username"`
+	// Avatar URL to profile picture (optional)
+	Avatar    *string         `json:"avatar,omitempty"`
+	Email     string          `json:"email"`
+	Role      UserProfileRole `json:"role"`
+	CreatedAt *time.Time      `json:"created_at,omitempty"`
+	UpdatedAt *time.Time      `json:"updated_at,omitempty"`
+}
+
+// UserProfileRole defines model for UserProfile.Role.
+type UserProfileRole string
+
+// ListUsersParams defines parameters for ListUsers.
+type ListUsersParams struct {
+	Limit  *int `form:"limit,omitempty" json:"limit,omitempty"`
+	Offset *int `form:"offset,omitempty" json:"offset,omitempty"`
+}
+
+// CreateUserJSONBody defines parameters for CreateUser.
+type CreateUserJSONBody struct {
+	Avatar   *string                `json:"avatar,omitempty"`
+	Email    string                 `json:"email"`
+	Password string                 `json:"password"`
+	Role     CreateUserJSONBodyRole `json:"role"`
+	Username string                 `json:"username"`
+}
+
+// CreateUserJSONBodyRole defines parameters for CreateUser.
+type CreateUserJSONBodyRole string
+
+// UpdateUserJSONBody defines parameters for UpdateUser.
+type UpdateUserJSONBody struct {
+	Avatar   *string                 `json:"avatar,omitempty"`
+	Email    *string                 `json:"email,omitempty"`
+	Password *string                 `json:"password,omitempty"`
+	Role     *UpdateUserJSONBodyRole `json:"role,omitempty"`
+	Username *string                 `json:"username,omitempty"`
+}
+
+// UpdateUserJSONBodyRole defines parameters for UpdateUser.
+type UpdateUserJSONBodyRole string
+
+// LoginJSONBody defines parameters for Login.
+type LoginJSONBody struct {
+	Email    string `json:"email"`
+	Password string `json:"password"`
+}
+
+// RegisterJSONBody defines parameters for Register.
+type RegisterJSONBody struct {
+	// Avatar URL to profile picture (optional)
+	Avatar   *string             `json:"avatar,omitempty"`
+	Email    openapi_types.Email `json:"email"`
+	Password string              `json:"password"`
+
+	// Username Unique username
+	Username string `json:"username"`
+}
+
+// UpdatePreferencesJSONBody defines parameters for UpdatePreferences.
+type UpdatePreferencesJSONBody struct {
+	Language      *string `json:"language,omitempty"`
+	Notifications *bool   `json:"notifications,omitempty"`
+}
+
+// CreateUserJSONRequestBody defines body for CreateUser for application/json ContentType.
+type CreateUserJSONRequestBody CreateUserJSONBody
+
+// UpdateUserJSONRequestBody defines body for UpdateUser for application/json ContentType.
+type UpdateUserJSONRequestBody UpdateUserJSONBody
+
+// LoginJSONRequestBody defines body for Login for application/json ContentType.
+type LoginJSONRequestBody LoginJSONBody
+
+// RegisterJSONRequestBody defines body for Register for application/json ContentType.
+type RegisterJSONRequestBody RegisterJSONBody
+
+// UpdatePreferencesJSONRequestBody defines body for UpdatePreferences for application/json ContentType.
+type UpdatePreferencesJSONRequestBody UpdatePreferencesJSONBody
+
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
+	// List all users (admin only)
+	// (GET /api/v1/admin/users)
+	ListUsers(w http.ResponseWriter, r *http.Request, params ListUsersParams)
+	// Create a user (admin only)
+	// (POST /api/v1/admin/users)
+	CreateUser(w http.ResponseWriter, r *http.Request)
+	// Delete user (admin only)
+	// (DELETE /api/v1/admin/users/{id})
+	DeleteUser(w http.ResponseWriter, r *http.Request, id string)
+	// Get user by ID (admin only)
+	// (GET /api/v1/admin/users/{id})
+	GetUser(w http.ResponseWriter, r *http.Request, id string)
+	// Update user (admin only)
+	// (PUT /api/v1/admin/users/{id})
+	UpdateUser(w http.ResponseWriter, r *http.Request, id string)
+	// Login and obtain JWT
+	// (POST /api/v1/auth/login)
+	Login(w http.ResponseWriter, r *http.Request)
+	// Register a new user
+	// (POST /api/v1/auth/register)
+	Register(w http.ResponseWriter, r *http.Request)
 	// Health check
 	// (GET /api/v1/health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
+	// Get current user profile
+	// (GET /api/v1/users/me)
+	GetMe(w http.ResponseWriter, r *http.Request)
+	// Update user preferences
+	// (PATCH /api/v1/users/me/preferences)
+	UpdatePreferences(w http.ResponseWriter, r *http.Request)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -92,11 +258,233 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(http.Handler) http.Handler
 
+// ListUsers operation middleware
+func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListUsersParams
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "limit", r.URL.Query(), &params.Limit, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "limit", Err: err})
+		return
+	}
+
+	// ------------- Optional query parameter "offset" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "offset", r.URL.Query(), &params.Offset, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "offset", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListUsers(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateUser operation middleware
+func (siw *ServerInterfaceWrapper) CreateUser(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateUser(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteUser operation middleware
+func (siw *ServerInterfaceWrapper) DeleteUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteUser(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetUser operation middleware
+func (siw *ServerInterfaceWrapper) GetUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetUser(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateUser operation middleware
+func (siw *ServerInterfaceWrapper) UpdateUser(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateUser(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Login operation middleware
+func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Login(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Register operation middleware
+func (siw *ServerInterfaceWrapper) Register(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Register(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // GetHealth operation middleware
 func (siw *ServerInterfaceWrapper) GetHealth(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.GetHealth(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMe operation middleware
+func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMe(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdatePreferences operation middleware
+func (siw *ServerInterfaceWrapper) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdatePreferences(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -226,7 +614,16 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
+	m.HandleFunc("GET "+options.BaseURL+"/api/v1/admin/users", wrapper.ListUsers)
+	m.HandleFunc("POST "+options.BaseURL+"/api/v1/admin/users", wrapper.CreateUser)
+	m.HandleFunc("DELETE "+options.BaseURL+"/api/v1/admin/users/{id}", wrapper.DeleteUser)
+	m.HandleFunc("GET "+options.BaseURL+"/api/v1/admin/users/{id}", wrapper.GetUser)
+	m.HandleFunc("PUT "+options.BaseURL+"/api/v1/admin/users/{id}", wrapper.UpdateUser)
+	m.HandleFunc("POST "+options.BaseURL+"/api/v1/auth/login", wrapper.Login)
+	m.HandleFunc("POST "+options.BaseURL+"/api/v1/auth/register", wrapper.Register)
 	m.HandleFunc("GET "+options.BaseURL+"/api/v1/health", wrapper.GetHealth)
+	m.HandleFunc("GET "+options.BaseURL+"/api/v1/users/me", wrapper.GetMe)
+	m.HandleFunc("PATCH "+options.BaseURL+"/api/v1/users/me/preferences", wrapper.UpdatePreferences)
 
 	return m
 }
