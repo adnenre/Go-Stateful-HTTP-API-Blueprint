@@ -23,18 +23,21 @@ func JWTAuthMiddleware(cfg *config.Config, publicPaths map[string]bool) func(htt
 			}
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
-				errors.WriteProblemSimple(w, r, http.StatusUnauthorized, "Unauthorized", "missing authorization header", GetRequestID(r))
+				err := errors.UnauthorizedError("missing authorization header")
+				errors.WriteProblem(w, r, err, GetRequestID(r))
 				return
 			}
 			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-				errors.WriteProblemSimple(w, r, http.StatusUnauthorized, "Unauthorized", "invalid authorization format", GetRequestID(r))
+				err := errors.UnauthorizedError("invalid authorization format")
+				errors.WriteProblem(w, r, err, GetRequestID(r))
 				return
 			}
 			tokenString := parts[1]
 			claims, err := auth.ValidateToken(tokenString, cfg.JWTSecret)
 			if err != nil {
-				errors.WriteProblemSimple(w, r, http.StatusUnauthorized, "Unauthorized", "invalid or expired token", GetRequestID(r))
+				err := errors.UnauthorizedError("invalid or expired token")
+				errors.WriteProblem(w, r, err, GetRequestID(r))
 				return
 			}
 			ctx := context.WithValue(r.Context(), UserKey, claims)

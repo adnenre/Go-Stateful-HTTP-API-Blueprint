@@ -8,6 +8,7 @@ import (
 	"rest-api-blueprint/internal/cache"
 	"rest-api-blueprint/internal/config"
 	"rest-api-blueprint/internal/database"
+	"rest-api-blueprint/internal/features/admin"
 	adminController "rest-api-blueprint/internal/features/admin/controller"
 	adminRepository "rest-api-blueprint/internal/features/admin/repository"
 	adminService "rest-api-blueprint/internal/features/admin/service"
@@ -33,6 +34,20 @@ type combinedServer struct {
 	*authController.AuthController
 	*userController.UserController
 	*adminController.AdminController
+}
+
+// dtoResolver combines all feature resolvers for the validation middleware.
+func dtoResolver(r *http.Request) (any, bool) {
+	if dto, ok := auth.Resolver(r); ok {
+		return dto, true
+	}
+	if dto, ok := user.Resolver(r); ok {
+		return dto, true
+	}
+	if dto, ok := admin.Resolver(r); ok {
+		return dto, true
+	}
+	return nil, false
 }
 
 func main() {
@@ -114,9 +129,9 @@ func main() {
 	// 10. APPLY MIDDLEWARES – ORDER MATTERS!
 	//
 	// Execution order (outermost first):
-	//   SecurityHeaders → CORS → RequestID → JWTAuth → Logging → RateLimiter → baseHandler
+	//   SecurityHeaders → CORS → RequestID → Logging → ValidateRequest → JWTAuth → RateLimiter → baseHandler
 	//
-	// Public paths that do NOT require JWT:
+	// Public paths that do NOT require JWT (used by JWTAuthMiddleware):
 	//   - /api/v1/health
 	//   - /api/v1/auth/login
 	//   - /api/v1/auth/register
@@ -127,19 +142,23 @@ func main() {
 		"/api/v1/auth/register": true,
 	}
 
-	// 10.1 Rate limiting (innermost)
+	// Build chain from innermost to outermost:
+	// (a) Rate limiting (innermost)
 	handler = rateLimiter.Middleware(middleware.DefaultIPKeyFunc)(handler)
 
-	// 10.2 Logging – logs request method, path, status, latency, and request ID
-	handler = middleware.Logging(handler)
-
-	// 10.3 JWT authentication – extracts and validates token, injects claims into context
+	// (b) JWT authentication – validates token, injects claims (skips public paths)
 	handler = middleware.JWTAuthMiddleware(cfg, publicPaths)(handler)
 
-	// 10.4 Request ID – generates/forwards X-Request-Id and stores it in context
+	// (c) Global validation – decodes, validates, and restores request body
+	handler = middleware.ValidateRequest(dtoResolver)(handler)
+
+	// (d) Logging – logs request method, path, status, latency, request ID
+	handler = middleware.Logging(handler)
+
+	// (e) Request ID – generates/forwards X-Request-Id and stores in context
 	handler = middleware.RequestIDMiddleware(handler)
 
-	// 10.5 CORS – handles preflight requests and sets CORS headers
+	// (f) CORS – handles preflight requests and sets CORS headers
 	corsMiddleware := middleware.NewCORS(middleware.CORSConfig{
 		AllowedOrigins:   cfg.CORSAllowedOrigins,
 		AllowedMethods:   cfg.CORSAllowedMethods,
@@ -148,7 +167,7 @@ func main() {
 	})
 	handler = corsMiddleware(handler)
 
-	// 10.6 Security headers (outermost) – adds X‑Content‑Type‑Options, etc.
+	// (g) Security headers (outermost) – adds security headers
 	securityMiddleware := middleware.SecurityHeaders(middleware.SecurityHeadersConfig{
 		HSTSMaxAge: cfg.HSTSMaxAge,
 	})

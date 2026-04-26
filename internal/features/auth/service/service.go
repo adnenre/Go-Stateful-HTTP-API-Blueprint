@@ -2,9 +2,9 @@ package service
 
 import (
 	"context"
-	"errors"
 	"rest-api-blueprint/internal/auth"
 	"rest-api-blueprint/internal/config"
+	"rest-api-blueprint/internal/errors" // add this
 	"rest-api-blueprint/internal/features/auth/model"
 	"rest-api-blueprint/internal/features/auth/repository"
 
@@ -26,14 +26,14 @@ func (s *authService) Register(ctx context.Context, email, username, password st
 		return "", err
 	}
 	if exists {
-		return "", errors.New("email already exists")
+		return "", errors.ConflictError("email")
 	}
 	exists, err = s.repo.UsernameExists(ctx, username)
 	if err != nil {
 		return "", err
 	}
 	if exists {
-		return "", errors.New("username already taken")
+		return "", errors.ConflictError("username")
 	}
 	hashed, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
@@ -58,10 +58,10 @@ func (s *authService) Login(ctx context.Context, email, password string) (string
 		return "", err
 	}
 	if user == nil {
-		return "", errors.New("invalid credentials")
+		return "", errors.UnauthorizedError("Invalid email or password")
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password)); err != nil {
-		return "", errors.New("invalid credentials")
+		return "", errors.UnauthorizedError("Invalid email or password")
 	}
 	token, err := auth.GenerateToken(user.ID, user.Role, s.cfg.JWTSecret, s.cfg.JWTExpiry)
 	if err != nil {

@@ -50,9 +50,10 @@ func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(htt
 			res, err := rl.limiter.Allow(r.Context(), key, redis_rate.PerSecond(rl.limit))
 			if err != nil {
 				slog.Error("rate limiter redis error", "error", err, "key", key)
-				instance := GetRequestID(r) // updated
-				slog.Info("[4] Rate limiter 429 – instance retrieved", "instance", instance, "headerAtThisPoint", r.Header.Get("X-Request-ID"))
-				errors.WriteProblemSimple(w, r, http.StatusInternalServerError, "Rate Limiter Error", "Internal error while checking rate limit", instance)
+				instance := GetRequestID(r)
+				// Use InternalError domain error
+				errDomain := errors.InternalError("Rate limiter error: " + err.Error())
+				errors.WriteProblem(w, r, errDomain, instance)
 				return
 			}
 
@@ -69,8 +70,10 @@ func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(htt
 				w.Header().Set("X-RateLimit-Remaining", "0")
 				w.Header().Set("X-RateLimit-Reset", strconv.Itoa(int(res.RetryAfter.Seconds())))
 				w.Header().Set("Retry-After", strconv.Itoa(int(res.RetryAfter.Seconds())))
-				instance := GetRequestID(r) // updated
-				errors.WriteProblemSimple(w, r, http.StatusTooManyRequests, "Too Many Requests", "Rate limit exceeded. Please retry later.", instance)
+				instance := GetRequestID(r)
+				// Use TooManyRequestsError domain error
+				errDomain := errors.TooManyRequestsError("Rate limit exceeded. Please retry later.")
+				errors.WriteProblem(w, r, errDomain, instance)
 				return
 			}
 

@@ -21,8 +21,9 @@ func NewHealthController(svc service.Service) *HealthController {
 func (c *HealthController) GetHealth(w http.ResponseWriter, r *http.Request) {
 	data, err := c.svc.GetHealth(r.Context())
 	if err != nil {
-		instance := middleware.GetRequestID(r) // ← changed from r.Context() to r
-		errors.WriteProblemSimple(w, r, http.StatusInternalServerError, "Internal Server Error", "Failed to check health", instance)
+		instance := middleware.GetRequestID(r)
+		errDomain := errors.InternalError("Failed to check health: " + err.Error())
+		errors.WriteProblem(w, r, errDomain, instance)
 		return
 	}
 	resp := mapper.ToHealthResponse(data.Status, data.Uptime, data.Version, data.Checks)

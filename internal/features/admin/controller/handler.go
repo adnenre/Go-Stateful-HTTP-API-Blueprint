@@ -19,7 +19,6 @@ func NewAdminController(svc service.Service) *AdminController {
 	return &AdminController{svc: svc}
 }
 
-// isAdmin checks if the request context contains an admin role.
 func (c *AdminController) isAdmin(r *http.Request) bool {
 	claims := middleware.GetUserClaims(r.Context())
 	return claims != nil && claims.Role == "admin"
@@ -27,7 +26,8 @@ func (c *AdminController) isAdmin(r *http.Request) bool {
 
 func (c *AdminController) ListUsers(w http.ResponseWriter, r *http.Request, params gen.ListUsersParams) {
 	if !c.isAdmin(r) {
-		errors.WriteProblemSimple(w, r, http.StatusForbidden, "Forbidden", "admin role required", middleware.GetRequestID(r))
+		err := errors.ForbiddenError("admin role required")
+		errors.WriteProblem(w, r, err, middleware.GetRequestID(r))
 		return
 	}
 	limit := 20
@@ -40,7 +40,9 @@ func (c *AdminController) ListUsers(w http.ResponseWriter, r *http.Request, para
 	}
 	users, err := c.svc.ListUsers(r.Context(), limit, offset)
 	if err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusInternalServerError, "Failed to list users", err.Error(), middleware.GetRequestID(r))
+		// Unexpected error → internal server error
+		errDomain := errors.InternalError(err.Error())
+		errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
 		return
 	}
 	resp := mapper.ToUserResponseList(users)
@@ -50,17 +52,26 @@ func (c *AdminController) ListUsers(w http.ResponseWriter, r *http.Request, para
 
 func (c *AdminController) CreateUser(w http.ResponseWriter, r *http.Request) {
 	if !c.isAdmin(r) {
-		errors.WriteProblemSimple(w, r, http.StatusForbidden, "Forbidden", "admin role required", middleware.GetRequestID(r))
+		err := errors.ForbiddenError("admin role required")
+		errors.WriteProblem(w, r, err, middleware.GetRequestID(r))
 		return
 	}
 	var req dto.CreateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusBadRequest, "Invalid request", err.Error(), middleware.GetRequestID(r))
+		// Malformed JSON → 400 Bad Request
+		errDomain := errors.BadRequestError("Invalid request body: " + err.Error())
+		errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
 		return
 	}
 	user, err := c.svc.CreateUser(r.Context(), req.Email, req.Username, req.Password, req.Role, req.Avatar)
 	if err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusInternalServerError, "Failed to create user", err.Error(), middleware.GetRequestID(r))
+		if domainErr, ok := err.(*errors.DomainError); ok {
+			errors.WriteProblem(w, r, domainErr, middleware.GetRequestID(r))
+		} else {
+			// Unexpected error → internal server error
+			errDomain := errors.InternalError(err.Error())
+			errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
+		}
 		return
 	}
 	resp := mapper.ToUserResponse(user)
@@ -71,16 +82,23 @@ func (c *AdminController) CreateUser(w http.ResponseWriter, r *http.Request) {
 
 func (c *AdminController) GetUser(w http.ResponseWriter, r *http.Request, id string) {
 	if !c.isAdmin(r) {
-		errors.WriteProblemSimple(w, r, http.StatusForbidden, "Forbidden", "admin role required", middleware.GetRequestID(r))
+		err := errors.ForbiddenError("admin role required")
+		errors.WriteProblem(w, r, err, middleware.GetRequestID(r))
 		return
 	}
 	user, err := c.svc.GetUser(r.Context(), id)
 	if err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusNotFound, "Not Found", "user not found", middleware.GetRequestID(r))
+		if domainErr, ok := err.(*errors.DomainError); ok {
+			errors.WriteProblem(w, r, domainErr, middleware.GetRequestID(r))
+		} else {
+			errDomain := errors.InternalError(err.Error())
+			errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
+		}
 		return
 	}
 	if user == nil {
-		errors.WriteProblemSimple(w, r, http.StatusNotFound, "Not Found", "user not found", middleware.GetRequestID(r))
+		err := errors.NotFoundError("user")
+		errors.WriteProblem(w, r, err, middleware.GetRequestID(r))
 		return
 	}
 	resp := mapper.ToUserResponse(user)
@@ -90,20 +108,23 @@ func (c *AdminController) GetUser(w http.ResponseWriter, r *http.Request, id str
 
 func (c *AdminController) UpdateUser(w http.ResponseWriter, r *http.Request, id string) {
 	if !c.isAdmin(r) {
-		errors.WriteProblemSimple(w, r, http.StatusForbidden, "Forbidden", "admin role required", middleware.GetRequestID(r))
+		err := errors.ForbiddenError("admin role required")
+		errors.WriteProblem(w, r, err, middleware.GetRequestID(r))
 		return
 	}
 	var req dto.UpdateUserRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusBadRequest, "Invalid request", err.Error(), middleware.GetRequestID(r))
+		errDomain := errors.BadRequestError("Invalid request body: " + err.Error())
+		errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
 		return
 	}
 	err := c.svc.UpdateUser(r.Context(), id, req.Email, req.Username, req.Role, req.Password, req.Avatar)
 	if err != nil {
-		if err.Error() == "user not found" {
-			errors.WriteProblemSimple(w, r, http.StatusNotFound, "Not Found", err.Error(), middleware.GetRequestID(r))
+		if domainErr, ok := err.(*errors.DomainError); ok {
+			errors.WriteProblem(w, r, domainErr, middleware.GetRequestID(r))
 		} else {
-			errors.WriteProblemSimple(w, r, http.StatusInternalServerError, "Failed to update user", err.Error(), middleware.GetRequestID(r))
+			errDomain := errors.InternalError(err.Error())
+			errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
 		}
 		return
 	}
@@ -112,15 +133,17 @@ func (c *AdminController) UpdateUser(w http.ResponseWriter, r *http.Request, id 
 
 func (c *AdminController) DeleteUser(w http.ResponseWriter, r *http.Request, id string) {
 	if !c.isAdmin(r) {
-		errors.WriteProblemSimple(w, r, http.StatusForbidden, "Forbidden", "admin role required", middleware.GetRequestID(r))
+		err := errors.ForbiddenError("admin role required")
+		errors.WriteProblem(w, r, err, middleware.GetRequestID(r))
 		return
 	}
 	err := c.svc.DeleteUser(r.Context(), id)
 	if err != nil {
-		if err.Error() == "user not found" {
-			errors.WriteProblemSimple(w, r, http.StatusNotFound, "Not Found", err.Error(), middleware.GetRequestID(r))
+		if domainErr, ok := err.(*errors.DomainError); ok {
+			errors.WriteProblem(w, r, domainErr, middleware.GetRequestID(r))
 		} else {
-			errors.WriteProblemSimple(w, r, http.StatusInternalServerError, "Failed to delete user", err.Error(), middleware.GetRequestID(r))
+			errDomain := errors.InternalError(err.Error())
+			errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
 		}
 		return
 	}
