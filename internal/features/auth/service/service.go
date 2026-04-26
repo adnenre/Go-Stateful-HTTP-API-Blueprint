@@ -92,8 +92,8 @@ func (s *authService) Login(ctx context.Context, email, password string) (string
 	return token, nil
 }
 
-func (s *authService) VerifyOTP(ctx context.Context, email, otp string) (string, error) {
-	ok, err := redisstore.VerifyOTP(ctx, s.rdb, email, otp)
+func (s *authService) VerifyOtp(ctx context.Context, email, otp string) (string, error) {
+	ok, err := redisstore.VerifyOtp(ctx, s.rdb, email, otp)
 	if err != nil {
 		return "", err
 	}
