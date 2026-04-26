@@ -37,6 +37,9 @@ type Config struct {
 
 	// HSTS (HTTP Strict Transport Security)
 	HSTSMaxAge int // max-age in seconds (default 31536000)
+
+	// Error documentation base URL (optional)
+	ErrorDocsBaseURL string // e.g., "http://localhost:8080" or "https://api.example.com"
 }
 
 // Load reads configuration from environment variables and .env file.
@@ -76,6 +79,9 @@ func Load() (*Config, error) {
 	// HSTS max-age (default 1 year = 31536000 seconds)
 	hstsMaxAge := getEnvInt("HSTS_MAX_AGE", 31536000)
 
+	// Error documentation base URL (optional)
+	errorDocsBaseURL := getEnv("ERROR_DOCS_BASE_URL", "")
+
 	return &Config{
 		ServerPort:           serverPort,
 		DatabaseURL:          databaseURL,
@@ -88,6 +94,7 @@ func Load() (*Config, error) {
 		CORSAllowedHeaders:   strings.Split(corsHeaders, ","),
 		CORSAllowCredentials: corsCredentials,
 		HSTSMaxAge:           hstsMaxAge,
+		ErrorDocsBaseURL:     errorDocsBaseURL,
 	}, nil
 }
 
