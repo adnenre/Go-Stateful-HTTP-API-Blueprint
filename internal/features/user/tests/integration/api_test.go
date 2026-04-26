@@ -21,6 +21,7 @@ import (
 
 	"rest-api-blueprint/internal/auth"
 	"rest-api-blueprint/internal/config"
+	"rest-api-blueprint/internal/email"
 	authModel "rest-api-blueprint/internal/features/auth/model"
 	authRepo "rest-api-blueprint/internal/features/auth/repository"
 	authService "rest-api-blueprint/internal/features/auth/service"
@@ -68,13 +69,11 @@ func TestUserIntegration(t *testing.T) {
 		t.Skipf("failed to migrate: %v", err)
 	}
 
-	// ============================================================
-	// HARD DELETE ANY PREVIOUS TEST DATA FOR USER-INTEGRATION
-	// ============================================================
+	// Hard delete previous test data
 	gormDB.Unscoped().Where("email = ?", "user-integration@example.com").Delete(&authModel.User{})
 	gormDB.Unscoped().Where("user_id = ?", "user-integration-id").Delete(&userModel.UserPreferences{})
 
-	// Redis (not required for user, but we still connect to avoid panic)
+	// Redis
 	redisAddr := os.Getenv("REDIS_URL")
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
@@ -82,7 +81,9 @@ func TestUserIntegration(t *testing.T) {
 	redisClient := redis.NewClient(&redis.Options{Addr: redisAddr})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_ = redisClient.Ping(ctx).Err() // ignore, user feature doesn't use Redis
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		t.Skipf("redis unavailable: %v", err)
+	}
 	defer redisClient.Close()
 
 	// Config
@@ -91,19 +92,27 @@ func TestUserIntegration(t *testing.T) {
 		JWTExpiry: 15 * time.Minute,
 	}
 
-	// Create a test user via auth service
-	authRepoInstance := authRepo.NewRepository(gormDB)
-	authSvc := authService.NewService(authRepoInstance, cfg)
-	userID, err := authSvc.Register(context.Background(), "user-integration@example.com", "userint", "testpass", nil)
-	if err != nil {
-		t.Fatalf("failed to create test user: %v", err)
-	}
-	_ = userID
+	// Email mock
+	emailSender := &email.MockSender{}
 
-	// Login to get token and claims
-	token, err := authSvc.Login(context.Background(), "user-integration@example.com", "testpass")
+	// Create a test user via auth service (pending)
+	authRepoInstance := authRepo.NewRepository(gormDB)
+	authSvc := authService.NewService(authRepoInstance, cfg, redisClient, emailSender)
+	if err := authSvc.Register(context.Background(), "user-integration@example.com", "userint", "testpass", nil); err != nil {
+		t.Fatalf("failed to register test user: %v", err)
+	}
+
+	// Retrieve OTP from Redis
+	otpKey := fmt.Sprintf("otp:%s", "user-integration@example.com")
+	otp, err := redisClient.Get(context.Background(), otpKey).Result()
 	if err != nil {
-		t.Fatalf("failed to login: %v", err)
+		t.Fatalf("failed to get OTP from Redis: %v", err)
+	}
+
+	// Verify OTP to activate user and get JWT
+	token, err := authSvc.VerifyOTP(context.Background(), "user-integration@example.com", otp)
+	if err != nil {
+		t.Fatalf("failed to verify OTP: %v", err)
 	}
 	claims, err := auth.ValidateToken(token, cfg.JWTSecret)
 	if err != nil {
@@ -119,7 +128,6 @@ func TestUserIntegration(t *testing.T) {
 	// ACT & ASSERT – GET /users/me
 	// ============================================================
 	req := httptest.NewRequest("GET", "/api/v1/users/me", nil)
-	// Inject claims and request ID into context (simulate middleware)
 	ctxWithValues := context.WithValue(req.Context(), middleware.UserKey, claims)
 	ctxWithValues = context.WithValue(ctxWithValues, middleware.RequestIDKey, "test-request-id")
 	req = req.WithContext(ctxWithValues)
@@ -150,7 +158,7 @@ func TestUserIntegration(t *testing.T) {
 	body, _ := json.Marshal(prefsPayload)
 	req = httptest.NewRequest("PATCH", "/api/v1/users/me/preferences", bytes.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
-	req = req.WithContext(ctxWithValues) // same context with claims
+	req = req.WithContext(ctxWithValues)
 	w = httptest.NewRecorder()
 	ctrl.UpdatePreferences(w, req)
 
