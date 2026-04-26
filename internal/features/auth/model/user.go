@@ -11,6 +11,7 @@ type User struct {
 	Username  string         `gorm:"uniqueIndex;not null"`
 	Email     string         `gorm:"uniqueIndex;not null"`
 	Password  string         `gorm:"not null"` // hashed
+	Status    string         `gorm:"default:'pending'"`
 	Role      string         `gorm:"default:'user'"`
 	Avatar    *string        `gorm:"type:text"`
 	CreatedAt time.Time      `json:"created_at"`
