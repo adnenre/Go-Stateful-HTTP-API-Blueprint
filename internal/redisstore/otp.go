@@ -27,9 +27,9 @@ func StoreOTP(ctx context.Context, rdb *redis.Client, email, otp string) error {
 	return rdb.Set(ctx, key, otp, otpTTL).Err()
 }
 
-// VerifyOTP checks if the provided OTP matches the stored one.
+// VerifyOtp checks if the provided OTP matches the stored one.
 // It deletes the OTP if verification succeeds.
-func VerifyOTP(ctx context.Context, rdb *redis.Client, email, otp string) (bool, error) {
+func VerifyOtp(ctx context.Context, rdb *redis.Client, email, otp string) (bool, error) {
 	key := fmt.Sprintf("otp:%s", email)
 	stored, err := rdb.Get(ctx, key).Result()
 	if err == redis.Nil {
