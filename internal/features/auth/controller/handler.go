@@ -20,38 +20,39 @@ func NewAuthController(svc service.Service) *AuthController {
 func (c *AuthController) Register(w http.ResponseWriter, r *http.Request) {
 	var req dto.RegisterRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusBadRequest, "Invalid request body", err.Error(), middleware.GetRequestID(r))
-		return
-	}
-	// Basic validation
-	if req.Email == "" || req.Password == "" || req.Username == "" {
-		errors.WriteProblemSimple(w, r, http.StatusBadRequest, "Validation failed", "email, password, and username are required", middleware.GetRequestID(r))
+		errDomain := errors.BadRequestError("Invalid request body: " + err.Error())
+		errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
 		return
 	}
 	userID, err := c.svc.Register(r.Context(), req.Email, req.Username, req.Password, req.Avatar)
 	if err != nil {
-		switch err.Error() {
-		case "email already exists", "username already taken":
-			errors.WriteProblemSimple(w, r, http.StatusConflict, "Conflict", err.Error(), middleware.GetRequestID(r))
-		default:
-			errors.WriteProblemSimple(w, r, http.StatusInternalServerError, "Registration failed", err.Error(), middleware.GetRequestID(r))
+		if domainErr, ok := err.(*errors.DomainError); ok {
+			errors.WriteProblem(w, r, domainErr, middleware.GetRequestID(r))
+		} else {
+			errDomain := errors.InternalError(err.Error())
+			errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
 		}
 		return
 	}
 	_ = userID
 	w.WriteHeader(http.StatusCreated)
-	// Optionally return the created user's ID or profile (not required by OpenAPI)
 }
 
 func (c *AuthController) Login(w http.ResponseWriter, r *http.Request) {
 	var req dto.LoginRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusBadRequest, "Invalid request body", err.Error(), middleware.GetRequestID(r))
+		errDomain := errors.BadRequestError("Invalid request body: " + err.Error())
+		errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
 		return
 	}
 	token, err := c.svc.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusUnauthorized, "Authentication failed", "Invalid email or password", middleware.GetRequestID(r))
+		if domainErr, ok := err.(*errors.DomainError); ok {
+			errors.WriteProblem(w, r, domainErr, middleware.GetRequestID(r))
+		} else {
+			errDomain := errors.InternalError(err.Error())
+			errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
+		}
 		return
 	}
 	resp := dto.LoginResponse{Token: token}

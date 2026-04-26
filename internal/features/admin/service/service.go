@@ -2,7 +2,7 @@ package service
 
 import (
 	"context"
-	"errors"
+	"rest-api-blueprint/internal/errors"
 	"rest-api-blueprint/internal/features/admin/repository"
 	"rest-api-blueprint/internal/features/auth/model"
 
@@ -38,7 +38,14 @@ func (s *adminService) CreateUser(ctx context.Context, email, username, password
 }
 
 func (s *adminService) GetUser(ctx context.Context, id string) (*model.User, error) {
-	return s.repo.FindByID(ctx, id)
+	user, err := s.repo.FindByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	if user == nil {
+		return nil, errors.NotFoundError("user")
+	}
+	return user, nil
 }
 
 func (s *adminService) UpdateUser(ctx context.Context, id string, email, username, role *string, password *string, avatar *string) error {
@@ -47,7 +54,7 @@ func (s *adminService) UpdateUser(ctx context.Context, id string, email, usernam
 		return err
 	}
 	if user == nil {
-		return errors.New("user not found")
+		return errors.NotFoundError("user")
 	}
 	if email != nil {
 		user.Email = *email
@@ -72,10 +79,13 @@ func (s *adminService) UpdateUser(ctx context.Context, id string, email, usernam
 }
 
 func (s *adminService) DeleteUser(ctx context.Context, id string) error {
-	// Optional: check existence first
-	_, err := s.repo.FindByID(ctx, id)
+	// Check existence – using domain error for clarity
+	user, err := s.repo.FindByID(ctx, id)
 	if err != nil {
 		return err
+	}
+	if user == nil {
+		return errors.NotFoundError("user")
 	}
 	return s.repo.DeleteUser(ctx, id)
 }

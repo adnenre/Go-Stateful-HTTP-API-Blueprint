@@ -1,10 +1,24 @@
 package errors
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
+
+// baseURL holds the base URL for error documentation (e.g., "https://api.example.com").
+// If empty, relative paths (e.g., "/errors/validation.html") are used.
+var baseURL string
+
+// Init initializes the error package with the base URL for error documentation.
+// Call this once in main after loading configuration.
+func Init(url string) {
+	// Trim trailing slash to avoid double slashes when building the type URI.
+	baseURL = strings.TrimSuffix(url, "/")
+}
 
 // DomainError represents an application error with RFC 7807 fields.
 type DomainError struct {
-	Type    string            // URI / error type (e.g., "validation", "not_found")
+	Type    string            // URI / error type (e.g., "/errors/validation.html")
 	Title   string            // short human‑readable summary
 	Status  int               // HTTP status code
 	Detail  string            // detailed explanation
@@ -15,6 +29,14 @@ func (e *DomainError) Error() string {
 	return e.Detail
 }
 
+// buildType constructs the full URI for an error path.
+func buildType(path string) string {
+	if baseURL == "" {
+		return path
+	}
+	return baseURL + path
+}
+
 // ----------------------------------------------------------------------------
 // 4xx Client Error Factories
 // ----------------------------------------------------------------------------
@@ -22,7 +44,7 @@ func (e *DomainError) Error() string {
 // BadRequestError returns a 400 Bad Request error.
 func BadRequestError(detail string) *DomainError {
 	return &DomainError{
-		Type:   "bad_request",
+		Type:   buildType("/errors/bad_request.html"),
 		Title:  "Bad request",
 		Status: 400,
 		Detail: detail,
@@ -32,7 +54,7 @@ func BadRequestError(detail string) *DomainError {
 // UnauthorizedError returns a 401 Unauthorized error.
 func UnauthorizedError(detail string) *DomainError {
 	return &DomainError{
-		Type:   "unauthorized",
+		Type:   buildType("/errors/unauthorized.html"),
 		Title:  "Unauthorized",
 		Status: 401,
 		Detail: detail,
@@ -42,7 +64,7 @@ func UnauthorizedError(detail string) *DomainError {
 // ForbiddenError returns a 403 Forbidden error.
 func ForbiddenError(detail string) *DomainError {
 	return &DomainError{
-		Type:   "forbidden",
+		Type:   buildType("/errors/forbidden.html"),
 		Title:  "Forbidden",
 		Status: 403,
 		Detail: detail,
@@ -52,7 +74,7 @@ func ForbiddenError(detail string) *DomainError {
 // NotFoundError returns a 404 Not Found error for a specific resource.
 func NotFoundError(resource string) *DomainError {
 	return &DomainError{
-		Type:   "not_found",
+		Type:   buildType("/errors/not_found.html"),
 		Title:  "Resource not found",
 		Status: 404,
 		Detail: fmt.Sprintf("%s not found", resource),
@@ -62,7 +84,7 @@ func NotFoundError(resource string) *DomainError {
 // NotFoundErrorCustom returns a 404 Not Found with custom detail.
 func NotFoundErrorCustom(detail string) *DomainError {
 	return &DomainError{
-		Type:   "not_found",
+		Type:   buildType("/errors/not_found.html"),
 		Title:  "Resource not found",
 		Status: 404,
 		Detail: detail,
@@ -72,7 +94,7 @@ func NotFoundErrorCustom(detail string) *DomainError {
 // ConflictError returns a 409 Conflict error.
 func ConflictError(resource string) *DomainError {
 	return &DomainError{
-		Type:   "conflict",
+		Type:   buildType("/errors/conflict.html"),
 		Title:  "Conflict",
 		Status: 409,
 		Detail: fmt.Sprintf("%s already exists", resource),
@@ -82,7 +104,7 @@ func ConflictError(resource string) *DomainError {
 // ConflictErrorCustom returns a 409 Conflict with custom detail.
 func ConflictErrorCustom(detail string) *DomainError {
 	return &DomainError{
-		Type:   "conflict",
+		Type:   buildType("/errors/conflict.html"),
 		Title:  "Conflict",
 		Status: 409,
 		Detail: detail,
@@ -90,11 +112,9 @@ func ConflictErrorCustom(detail string) *DomainError {
 }
 
 // UnprocessableEntityError returns a 422 Unprocessable Entity error.
-// Use this for validation failures (e.g., missing required fields, invalid format).
-// You can pass a map of field‑specific errors as the third argument.
 func UnprocessableEntityError(detail string, fieldErrors map[string]string) *DomainError {
 	return &DomainError{
-		Type:    "validation",
+		Type:    buildType("/errors/validation.html"),
 		Title:   "Validation failed",
 		Status:  422,
 		Detail:  detail,
@@ -103,10 +123,9 @@ func UnprocessableEntityError(detail string, fieldErrors map[string]string) *Dom
 }
 
 // TooManyRequestsError returns a 429 Too Many Requests error.
-// Note: rate limiting middleware typically handles this, but you may also return it from services.
 func TooManyRequestsError(detail string) *DomainError {
 	return &DomainError{
-		Type:   "too_many_requests",
+		Type:   buildType("/errors/too_many_requests.html"),
 		Title:  "Too many requests",
 		Status: 429,
 		Detail: detail,
@@ -120,7 +139,7 @@ func TooManyRequestsError(detail string) *DomainError {
 // InternalError returns a 500 Internal Server Error.
 func InternalError(detail string) *DomainError {
 	return &DomainError{
-		Type:   "internal",
+		Type:   buildType("/errors/internal.html"),
 		Title:  "Internal server error",
 		Status: 500,
 		Detail: detail,
@@ -130,7 +149,7 @@ func InternalError(detail string) *DomainError {
 // ServiceUnavailableError returns a 503 Service Unavailable.
 func ServiceUnavailableError(detail string) *DomainError {
 	return &DomainError{
-		Type:   "service_unavailable",
+		Type:   buildType("/errors/service_unavailable.html"),
 		Title:  "Service unavailable",
 		Status: 503,
 		Detail: detail,

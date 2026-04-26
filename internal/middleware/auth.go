@@ -14,27 +14,43 @@ type ContextKeyUser struct{}
 
 var UserKey = ContextKeyUser{}
 
-func JWTAuthMiddleware(cfg *config.Config, publicPaths map[string]bool) func(http.Handler) http.Handler {
+// JWTAuthMiddleware validates the JWT token and injects claims into the request context.
+// It skips authentication for:
+// - exact paths listed in publicPaths
+// - any path starting with any prefix in publicPrefixes (e.g., "/docs/", "/errors/")
+func JWTAuthMiddleware(cfg *config.Config, publicPaths map[string]bool, publicPrefixes []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Exact path match
 			if publicPaths[r.URL.Path] {
 				next.ServeHTTP(w, r)
 				return
 			}
+			// Prefix match
+			for _, prefix := range publicPrefixes {
+				if strings.HasPrefix(r.URL.Path, prefix) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			// Authentication required
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
-				errors.WriteProblemSimple(w, r, http.StatusUnauthorized, "Unauthorized", "missing authorization header", GetRequestID(r))
+				err := errors.UnauthorizedError("missing authorization header")
+				errors.WriteProblem(w, r, err, GetRequestID(r))
 				return
 			}
 			parts := strings.SplitN(authHeader, " ", 2)
 			if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-				errors.WriteProblemSimple(w, r, http.StatusUnauthorized, "Unauthorized", "invalid authorization format", GetRequestID(r))
+				err := errors.UnauthorizedError("invalid authorization format")
+				errors.WriteProblem(w, r, err, GetRequestID(r))
 				return
 			}
 			tokenString := parts[1]
 			claims, err := auth.ValidateToken(tokenString, cfg.JWTSecret)
 			if err != nil {
-				errors.WriteProblemSimple(w, r, http.StatusUnauthorized, "Unauthorized", "invalid or expired token", GetRequestID(r))
+				err := errors.UnauthorizedError("invalid or expired token")
+				errors.WriteProblem(w, r, err, GetRequestID(r))
 				return
 			}
 			ctx := context.WithValue(r.Context(), UserKey, claims)

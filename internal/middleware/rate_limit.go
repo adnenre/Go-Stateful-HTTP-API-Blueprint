@@ -36,6 +36,12 @@ func NewRateLimiter(rdb *redis.Client, limit int) *RateLimiter {
 func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip rate limiting for documentation paths
+			if strings.HasPrefix(r.URL.Path, "/docs/") || strings.HasPrefix(r.URL.Path, "/errors/") || r.URL.Path == "/docs" || r.URL.Path == "/errors" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			if rl.bypass || rl.limit <= 0 {
 				slog.Debug("rate limiter bypassed", "limit", rl.limit, "bypass", rl.bypass)
 				next.ServeHTTP(w, r)
@@ -50,9 +56,9 @@ func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(htt
 			res, err := rl.limiter.Allow(r.Context(), key, redis_rate.PerSecond(rl.limit))
 			if err != nil {
 				slog.Error("rate limiter redis error", "error", err, "key", key)
-				instance := GetRequestID(r) // updated
-				slog.Info("[4] Rate limiter 429 – instance retrieved", "instance", instance, "headerAtThisPoint", r.Header.Get("X-Request-ID"))
-				errors.WriteProblemSimple(w, r, http.StatusInternalServerError, "Rate Limiter Error", "Internal error while checking rate limit", instance)
+				instance := GetRequestID(r)
+				errDomain := errors.InternalError("Rate limiter error: " + err.Error())
+				errors.WriteProblem(w, r, errDomain, instance)
 				return
 			}
 
@@ -69,8 +75,9 @@ func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(htt
 				w.Header().Set("X-RateLimit-Remaining", "0")
 				w.Header().Set("X-RateLimit-Reset", strconv.Itoa(int(res.RetryAfter.Seconds())))
 				w.Header().Set("Retry-After", strconv.Itoa(int(res.RetryAfter.Seconds())))
-				instance := GetRequestID(r) // updated
-				errors.WriteProblemSimple(w, r, http.StatusTooManyRequests, "Too Many Requests", "Rate limit exceeded. Please retry later.", instance)
+				instance := GetRequestID(r)
+				errDomain := errors.TooManyRequestsError("Rate limit exceeded. Please retry later.")
+				errors.WriteProblem(w, r, errDomain, instance)
 				return
 			}
 

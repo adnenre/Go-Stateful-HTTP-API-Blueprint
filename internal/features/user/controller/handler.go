@@ -21,12 +21,18 @@ func NewUserController(svc service.Service) *UserController {
 func (c *UserController) GetMe(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetUserClaims(r.Context())
 	if claims == nil {
-		errors.WriteProblemSimple(w, r, http.StatusUnauthorized, "Unauthorized", "missing or invalid token", middleware.GetRequestID(r))
+		err := errors.UnauthorizedError("missing or invalid token")
+		errors.WriteProblem(w, r, err, middleware.GetRequestID(r))
 		return
 	}
 	user, err := c.svc.GetProfile(r.Context(), claims.UserID)
 	if err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusNotFound, "Not Found", err.Error(), middleware.GetRequestID(r))
+		if domainErr, ok := err.(*errors.DomainError); ok {
+			errors.WriteProblem(w, r, domainErr, middleware.GetRequestID(r))
+		} else {
+			errDomain := errors.InternalError(err.Error())
+			errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
+		}
 		return
 	}
 	resp := mapper.ToUserProfileResponse(user)
@@ -37,23 +43,35 @@ func (c *UserController) GetMe(w http.ResponseWriter, r *http.Request) {
 func (c *UserController) UpdatePreferences(w http.ResponseWriter, r *http.Request) {
 	claims := middleware.GetUserClaims(r.Context())
 	if claims == nil {
-		errors.WriteProblemSimple(w, r, http.StatusUnauthorized, "Unauthorized", "missing or invalid token", middleware.GetRequestID(r))
+		err := errors.UnauthorizedError("missing or invalid token")
+		errors.WriteProblem(w, r, err, middleware.GetRequestID(r))
 		return
 	}
 	var req dto.UpdatePreferencesRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusBadRequest, "Invalid request body", err.Error(), middleware.GetRequestID(r))
+		errDomain := errors.BadRequestError("Invalid request body: " + err.Error())
+		errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
 		return
 	}
 	err := c.svc.UpdatePreferences(r.Context(), claims.UserID, req.Notifications, req.Language)
 	if err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusInternalServerError, "Failed to update preferences", err.Error(), middleware.GetRequestID(r))
+		if domainErr, ok := err.(*errors.DomainError); ok {
+			errors.WriteProblem(w, r, domainErr, middleware.GetRequestID(r))
+		} else {
+			errDomain := errors.InternalError(err.Error())
+			errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
+		}
 		return
 	}
 	// Return updated preferences
 	prefs, err := c.svc.GetPreferences(r.Context(), claims.UserID)
 	if err != nil {
-		errors.WriteProblemSimple(w, r, http.StatusInternalServerError, "Failed to retrieve preferences", err.Error(), middleware.GetRequestID(r))
+		if domainErr, ok := err.(*errors.DomainError); ok {
+			errors.WriteProblem(w, r, domainErr, middleware.GetRequestID(r))
+		} else {
+			errDomain := errors.InternalError(err.Error())
+			errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
+		}
 		return
 	}
 	resp := mapper.ToPreferencesResponse(prefs)

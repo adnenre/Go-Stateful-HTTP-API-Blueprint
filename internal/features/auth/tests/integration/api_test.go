@@ -64,8 +64,8 @@ func TestAuthIntegration(t *testing.T) {
 		t.Skipf("failed to migrate: %v", err)
 	}
 
-	// Clean any leftover test user
-	gormDB.Where("email = ?", "integration@example.com").Delete(&authModel.User{})
+	// Hard delete any leftover test user (use Unscoped to bypass soft delete)
+	gormDB.Unscoped().Where("email = ?", "integration@example.com").Delete(&authModel.User{})
 
 	// Redis (not strictly needed for auth, but we keep for consistency)
 	redisAddr := os.Getenv("REDIS_URL")
@@ -106,6 +106,8 @@ func TestAuthIntegration(t *testing.T) {
 	ctrl.Register(w, httpReq)
 
 	if w.Code != http.StatusCreated {
+		// Log the response body to see the error
+		t.Logf("Response body: %s", w.Body.String())
 		t.Fatalf("expected 201, got %d", w.Code)
 	}
 

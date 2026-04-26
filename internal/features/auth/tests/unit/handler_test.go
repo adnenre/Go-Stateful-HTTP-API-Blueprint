@@ -4,13 +4,13 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 
+	"rest-api-blueprint/internal/errors"
 	"rest-api-blueprint/internal/features/auth/controller"
 	"rest-api-blueprint/internal/features/auth/dto"
 )
@@ -55,7 +55,7 @@ func TestAuthController_Register(t *testing.T) {
 				Username: "newuser",
 			},
 			mockRegister: func(ctx context.Context, email, username, password string, avatar *string) (string, error) {
-				return "", errors.New("email already exists")
+				return "", errors.ConflictError("email") // changed
 			},
 			expectedStatus: http.StatusConflict,
 			expectedBody: map[string]interface{}{
@@ -109,9 +109,11 @@ func TestAuthController_Login(t *testing.T) {
 			expectedToken:  "jwt-token",
 		},
 		{
-			name:           "invalid credentials",
-			requestBody:    dto.LoginRequest{Email: "wrong", Password: "wrong"},
-			mockLogin:      func(ctx context.Context, email, password string) (string, error) { return "", errors.New("invalid") },
+			name:        "invalid credentials",
+			requestBody: dto.LoginRequest{Email: "wrong", Password: "wrong"},
+			mockLogin: func(ctx context.Context, email, password string) (string, error) {
+				return "", errors.UnauthorizedError("invalid credentials")
+			}, // changed
 			expectedStatus: http.StatusUnauthorized,
 		},
 	}
