@@ -3,7 +3,7 @@ info:
   title: REST API Blueprint
   description: |
     A reusable, contract‑first REST API template with enterprise‑ready features.
-    This specification defines the `/api/v1/health` endpoint and adds authentication,
+    This specification defines the `/health` endpoint and adds authentication,
     user profile, and admin management.
   version: 1.0.0
   contact:
@@ -31,7 +31,7 @@ tags:
 
 paths:
   # ==================== HEALTH ====================
-  /api/v1/health:
+  /health:
     get:
       summary: Health check
       description: |
@@ -73,7 +73,7 @@ paths:
                     database: "failed"
 
   # ==================== AUTHENTICATION ====================
-  /api/v1/auth/register:
+  /auth/register:
     post:
       summary: Register a new user
       operationId: register
@@ -107,7 +107,7 @@ paths:
         "409":
           description: Email or username already exists
 
-  /api/v1/auth/login:
+  /auth/login:
     post:
       summary: Login and obtain JWT
       operationId: login
@@ -139,7 +139,7 @@ paths:
           description: Invalid credentials
 
   # ==================== USERS ====================
-  /api/v1/users/me:
+  /users/me:
     get:
       summary: Get current user profile
       operationId: getMe
@@ -157,7 +157,7 @@ paths:
         "401":
           description: Unauthorized
 
-  /api/v1/users/me/preferences:
+  /users/me/preferences:
     patch:
       summary: Update user preferences
       operationId: updatePreferences
@@ -187,7 +187,7 @@ paths:
           description: Unauthorized
 
   # ==================== ADMIN ====================
-  /api/v1/admin/users:
+  /admin/users:
     get:
       summary: List all users (admin only)
       operationId: listUsers
@@ -256,7 +256,7 @@ paths:
         "403":
           description: Forbidden
 
-  /api/v1/admin/users/{id}:
+  /admin/users/{id}:
     get:
       summary: Get user by ID (admin only)
       operationId: getUser
