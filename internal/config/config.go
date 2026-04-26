@@ -48,6 +48,12 @@ type Config struct {
 	SMTPUser     string // SMTP auth username
 	SMTPPassword string // SMTP auth password
 	SMTPFrom     string // From email address
+
+	// Public paths (exact) that bypass JWT authentication (optional)
+	PublicPaths []string
+
+	// Public prefixes that bypass JWT authentication (optional)
+	PublicPrefixes []string
 }
 
 // Load reads configuration from environment variables and .env file.
@@ -102,6 +108,26 @@ func Load() *Config {
 	smtpPassword := getEnv("SMTP_PASSWORD", "")
 	smtpFrom := getEnv("SMTP_FROM", "")
 
+	// Public paths (exact) – no defaults; must be set via env if needed
+	publicPathsStr := getEnv("PUBLIC_PATHS", "")
+	var publicPaths []string
+	if publicPathsStr != "" {
+		publicPaths = strings.Split(publicPathsStr, ",")
+		for i, p := range publicPaths {
+			publicPaths[i] = strings.TrimSpace(p)
+		}
+	}
+
+	// Public prefixes – no defaults; must be set via env if needed
+	publicPrefixesStr := getEnv("PUBLIC_PREFIXES", "")
+	var publicPrefixes []string
+	if publicPrefixesStr != "" {
+		publicPrefixes = strings.Split(publicPrefixesStr, ",")
+		for i, p := range publicPrefixes {
+			publicPrefixes[i] = strings.TrimSpace(p)
+		}
+	}
+
 	return &Config{
 		ServerPort:           serverPort,
 		DatabaseURL:          databaseURL,
@@ -120,6 +146,8 @@ func Load() *Config {
 		SMTPUser:             smtpUser,
 		SMTPPassword:         smtpPassword,
 		SMTPFrom:             smtpFrom,
+		PublicPaths:          publicPaths,
+		PublicPrefixes:       publicPrefixes,
 	}
 }
 
