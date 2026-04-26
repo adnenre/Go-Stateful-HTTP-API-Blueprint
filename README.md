@@ -14,7 +14,7 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 - **No external web framework** – Only the standard library (`net/http`) and a code generator.
 - **Feature‑based layered architecture** – Each feature is isolated (controller, service, repository, model, mapper, dto, tests), making it easy to scale or split into microservices later.
 - **Enterprise‑ready health endpoint** – Real checks for PostgreSQL and Redis, returns `200`/`503` with detailed `checks` map.
-- **JWT authentication** – Register, login, and protect routes with JWT tokens (access tokens).
+- **JWT authentication with OTP verification** – Register, login, email‑based OTP activation, and password reset flows.
 - **User profile & preferences** – `GET /users/me` and `PATCH /users/me/preferences`.
 - **Admin user management** – Full CRUD on users (`/admin/users`) with role‑based access (admin only).
 - **Distributed rate limiting** – Redis‑based token bucket, per client IP, returns `429` with `Retry-After` headers.
@@ -55,13 +55,16 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 
 - [x] **JWT utility** – generate/validate tokens (`internal/auth/jwt.go`).
 - [x] **JWT authentication middleware** – protects routes, skips public paths, injects claims into context.
-- [x] **User registration** – `POST /api/v1/auth/register` (email, username, password, optional avatar).
-- [x] **User login** – `POST /api/v1/auth/login` returns JWT.
+- [x] **User registration** – `POST /api/v1/auth/register` (email, username, password, optional avatar) – returns `202 Accepted`, stores user as `pending`.
+- [x] **OTP verification** – `POST /api/v1/auth/otp/verify` (6‑digit OTP stored in Redis, 10 min TTL) activates account and returns JWT.
+- [x] **User login** – `POST /api/v1/auth/login` returns JWT (only active accounts).
 - [x] **User profile** – `GET /api/v1/users/me` (protected).
 - [x] **User preferences** – `PATCH /api/v1/users/me/preferences` (stored in separate table).
 - [x] **Admin CRUD** – full user management under `/api/v1/admin/users` (list, create, get by ID, update, delete) – only accessible with `admin` role.
 - [x] **Password hashing** – bcrypt.
 - [x] **Role‑based access control** – `admin` vs `user` (checked in admin endpoints).
+- [x] **Password reset** – `POST /api/v1/auth/password-reset/request` (sends reset token via email, always 202) and `POST /api/v1/auth/password-reset/confirm` (updates password with token).
+- [x] **Email sender** – mock (logs to stdout) for development, async SMTP sender with worker pool for production.
 
 ### 5. Middleware Pipeline
 
@@ -127,7 +130,7 @@ Example response:
     "status": "healthy",
     "timestamp": "2026-04-24T10:00:00Z",
     "uptime": "1m2s",
-    "version": "3.0.0",
+    "version": "1.0.0",
     "checks": {
       "database": "ok",
       "redis": "ok"
@@ -136,7 +139,7 @@ Example response:
 }
 ```
 
-> The Docker image is built and pushed automatically on every tag push (e.g., `v3.0.0`). The `:main` tag is updated on pushes to the `main` branch.
+> The Docker image is built and pushed automatically on every tag push (e.g., `v3.1.0`). The `:main` tag is updated on pushes to the `main` branch.
 
 ### Interactive API Documentation
 
@@ -145,6 +148,36 @@ Open `http://localhost:8080/docs/` in your browser to explore the API using Swag
 ### Error Documentation
 
 Every RFC 7807 error response contains a `type` URI (e.g., `/errors/validation.html`). These URIs resolve to human‑readable HTML pages explaining the error. You can also browse them at `http://localhost:8080/errors/`.
+
+### 🔐 OTP Verification Flow
+
+After registration, the user receives an OTP via email (mock sender logs to stdout). The account must be activated with:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/otp/verify \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","otp":"123456"}'
+```
+
+Only then the user can log in.
+
+### 📧 Password Reset Flow
+
+Request a reset token (always returns 202, no user enumeration):
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/password-reset/request \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com"}'
+```
+
+Confirm with the token:
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/password-reset/confirm \
+  -H "Content-Type: application/json" \
+  -d '{"token":"<token>","new_password":"NewPass123"}'
+```
 
 ### 🔐 Creating an Admin User
 
@@ -156,7 +189,7 @@ curl -X POST http://localhost:8080/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@example.com","password":"admin123","username":"admin"}'
 
-# Then update the role via PostgreSQL
+# Verify OTP (copy from logs) then promote role
 docker exec -it rest_api_postgres psql -U postgres -d rest_api_blueprint \
   -c "UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';"
 ```
@@ -181,7 +214,7 @@ rest-api-blueprint/
 │   ├── middleware/                     # Security, CORS, RequestID, JWTAuth, Logging, RateLimiter, Validation, PanicRecovery
 │   └── features/                       # Vertical slices
 │       ├── health/                     # Health endpoint (implemented)
-│       ├── auth/                       # User registration, login (implemented)
+│       ├── auth/                       # User registration, login, OTP, password reset (implemented)
 │       ├── user/                       # Profile & preferences (implemented)
 │       └── admin/                      # Admin CRUD on users (implemented)
 ├── .github/
@@ -235,7 +268,7 @@ Response:
     "status": "healthy",
     "timestamp": "2026-04-24T15:26:41.782319008Z",
     "uptime": "26m28s",
-    "version": "3.0.0"
+    "version": "1.0.0"
   },
   "status": "success"
 }
@@ -243,22 +276,24 @@ Response:
 
 Swagger UI is available at [http://localhost:8080/docs/](http://localhost:8080/docs/).
 
-### Test Authentication & User Endpoints
+### Test Authentication & OTP Flow
 
 ```bash
-# Register a user
+# Register (returns 202, OTP sent to email)
 curl -X POST http://localhost:8080/api/v1/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"pass123","username":"testuser"}'
 
-# Login to get a JWT token
+# Check logs for OTP (e.g., 654321)
+# Verify OTP to activate account and get JWT
+curl -X POST http://localhost:8080/api/v1/auth/otp/verify \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","otp":"654321"}'
+
+# Then login
 curl -X POST http://localhost:8080/api/v1/auth/login \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","password":"pass123"}'
-
-# Use the token to access protected endpoints
-TOKEN="your.jwt.token"
-curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/users/me
 ```
 
 ### Test Validation Error (missing username)
@@ -503,7 +538,7 @@ make test
 
 ## 🏁 Current Status & Roadmap
 
-The **health, auth, user, and admin features** are fully implemented and serve as working examples.  
+The **health, auth (with OTP and password reset), user, and admin features** are fully implemented and serve as working examples.  
 The blueprint is **production‑ready** as a foundation and **microservice‑ready** – you can build new features (products, scores, leaderboard, etc.) using the same pattern.
 
 ### What’s already done
@@ -514,7 +549,8 @@ The blueprint is **production‑ready** as a foundation and **microservice‑rea
 - ✅ Code generation via `oapi-codegen`
 - ✅ Scaffolding for new features
 - ✅ Health endpoint (`/api/v1/health`) with unit and integration tests (real PostgreSQL + Redis pings, 200/503 with `checks` map)
-- ✅ **Authentication**: `POST /api/v1/auth/register` and `POST /api/v1/auth/login` (JWT tokens, bcrypt password hashing)
+- ✅ **Authentication**: `POST /api/v1/auth/register` (returns 202, user pending), `POST /api/v1/auth/otp/verify` (activates account, returns JWT), `POST /api/v1/auth/login` (JWT, bcrypt)
+- ✅ **Password reset**: `POST /api/v1/auth/password-reset/request` and `POST /api/v1/auth/password-reset/confirm`
 - ✅ **User profile**: `GET /api/v1/users/me` (protected, returns user details)
 - ✅ **User preferences**: `PATCH /api/v1/users/me/preferences` (store/update preferences)
 - ✅ **Admin user management**: Full CRUD on `/api/v1/admin/users` (list, create, get by ID, update, delete) – only accessible with `admin` role
@@ -524,7 +560,7 @@ The blueprint is **production‑ready** as a foundation and **microservice‑rea
 - ✅ Structured configuration (`.env` + env vars, fail‑fast validation)
 - ✅ Structured JSON logging (`log/slog` with request ID)
 - ✅ PostgreSQL connection (GORM, connection pooling)
-- ✅ Redis client (used for rate limiting and health checks)
+- ✅ Redis client (used for rate limiting, health checks, OTP, reset tokens)
 - ✅ Distributed rate limiting (Redis‑based, per IP, returns 429)
 - ✅ Request ID middleware (`X-Request-Id` header, context, logs)
 - ✅ CORS middleware (configurable via env)
@@ -534,6 +570,8 @@ The blueprint is **production‑ready** as a foundation and **microservice‑rea
 - ✅ **Absolute error documentation URIs** (point to static HTML pages)
 - ✅ **Swagger UI** (`/docs/`) and static error pages (`/errors/`)
 - ✅ **Panic recovery middleware** (returns structured internal error)
+- ✅ **Asynchronous email sender** (mock for development, SMTP with worker pool for production)
+- ✅ **Redis‑based OTP and password reset tokens** (with TTL)
 - ✅ Docker Compose stack (PostgreSQL, Redis, Go app with hot reload)
 - ✅ GitHub Actions CI (tests with PostgreSQL/Redis service containers)
 - ✅ GitHub Actions CD (builds and pushes Docker image on tags)
@@ -541,7 +579,6 @@ The blueprint is **production‑ready** as a foundation and **microservice‑rea
 
 ### What you can build next
 
-- **OTP verification and password reset** – enhance auth with email-based flows.
 - **Pagination, filtering, sorting** – for list endpoints.
 - **Prometheus metrics** – monitor API performance.
 - **OpenTelemetry tracing** – distributed tracing with Jaeger.

@@ -75,7 +75,7 @@ paths:
   # ==================== AUTHENTICATION ====================
   /auth/register:
     post:
-      summary: Register a new user
+      summary: Register a new user (pending, OTP sent via email)
       operationId: register
       tags:
         - Auth
@@ -100,8 +100,8 @@ paths:
                   type: string
                   description: URL to profile picture (optional)
       responses:
-        "201":
-          description: User created successfully
+        "202":
+          description: Registration accepted, OTP sent to email
         "400":
           description: Invalid input
         "409":
@@ -136,7 +136,87 @@ paths:
                   token:
                     type: string
         "401":
-          description: Invalid credentials
+          description: Invalid credentials or account not activated
+
+  /auth/otp/verify:
+    post:
+      summary: Verify OTP and activate account
+      operationId: verifyOtp
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, otp]
+              properties:
+                email:
+                  type: string
+                otp:
+                  type: string
+                  minLength: 6
+                  maxLength: 6
+      responses:
+        "200":
+          description: Account activated, returns JWT
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+        "401":
+          description: Invalid or expired OTP
+
+  /auth/password-reset/request:
+    post:
+      summary: Request password reset email
+      operationId: requestPasswordReset
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+      responses:
+        "202":
+          description: Reset email sent (if account exists)
+        "400":
+          description: Invalid email
+
+  /auth/password-reset/confirm:
+    post:
+      summary: Confirm password reset with token
+      operationId: confirmPasswordReset
+      tags:
+        - Auth
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, new_password]
+              properties:
+                token:
+                  type: string
+                new_password:
+                  type: string
+                  minLength: 8
+      responses:
+        "200":
+          description: Password updated
+        "401":
+          description: Invalid or expired token
 
   # ==================== USERS ====================
   /users/me:

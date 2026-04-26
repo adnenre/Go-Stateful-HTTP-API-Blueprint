@@ -2,6 +2,7 @@ package integration
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -9,12 +10,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/assert"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
 	"rest-api-blueprint/internal/config"
+	"rest-api-blueprint/internal/email"
 	"rest-api-blueprint/internal/features/auth/controller"
 	"rest-api-blueprint/internal/features/auth/dto"
 	authModel "rest-api-blueprint/internal/features/auth/model"
@@ -25,7 +28,7 @@ import (
 
 func TestValidationIntegration_Register(t *testing.T) {
 	// ============================================================
-	// ARRANGE – set up real DB (skip if not available)
+	// ARRANGE – set up real DB and Redis (skip if not available)
 	// ============================================================
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
@@ -41,12 +44,28 @@ func TestValidationIntegration_Register(t *testing.T) {
 	defer sqlDB.Close()
 
 	// Clean any leftover test data
-	gormDB.Where("email = ?", "integration@example.com").Delete(&authModel.User{})
+	gormDB.Unscoped().Where("email = ?", "integration@example.com").Delete(&authModel.User{})
 
-	// Create auth service and controller (using test config)
+	// Redis
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "localhost:6379"
+	}
+	redisClient := redis.NewClient(&redis.Options{Addr: redisAddr})
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		t.Skipf("redis unavailable: %v", err)
+	}
+	defer redisClient.Close()
+
+	// Email sender (mock)
+	emailSender := &email.MockSender{}
+
+	// Create auth service and controller (inject Redis and email)
 	authRepo := repository.NewRepository(gormDB)
 	cfg := &config.Config{JWTSecret: "test", JWTExpiry: 15 * time.Minute}
-	authSvc := service.NewService(authRepo, cfg)
+	authSvc := service.NewService(authRepo, cfg, redisClient, emailSender)
 	authCtrl := controller.NewAuthController(authSvc)
 
 	// Prepare request with missing username (invalid)
@@ -83,6 +102,6 @@ func TestValidationIntegration_Register(t *testing.T) {
 	var problem map[string]interface{}
 	err = json.NewDecoder(w.Body).Decode(&problem)
 	assert.NoError(t, err)
-	assert.Equal(t, "/errors/validation.html", problem["type"]) // changed
+	assert.Equal(t, "/errors/validation.html", problem["type"])
 	assert.Contains(t, problem["errors"], "username")
 }

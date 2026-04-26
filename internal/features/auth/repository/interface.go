@@ -12,4 +12,6 @@ type Repository interface {
 	FindByID(ctx context.Context, id string) (*model.User, error)
 	UsernameExists(ctx context.Context, username string) (bool, error)
 	EmailExists(ctx context.Context, email string) (bool, error)
+	UpdateUserStatus(ctx context.Context, id, status string) error
+	UpdateUserPassword(ctx context.Context, id, hashedPassword string) error
 }

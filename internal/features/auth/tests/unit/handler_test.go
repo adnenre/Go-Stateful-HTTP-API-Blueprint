@@ -16,22 +16,34 @@ import (
 )
 
 type mockAuthService struct {
-	registerFunc func(ctx context.Context, email, username, password string, avatar *string) (string, error)
-	loginFunc    func(ctx context.Context, email, password string) (string, error)
+	registerFunc             func(ctx context.Context, email, username, password string, avatar *string) error
+	loginFunc                func(ctx context.Context, email, password string) (string, error)
+	verifyOTPFunc            func(ctx context.Context, email, otp string) (string, error)
+	requestPasswordResetFunc func(ctx context.Context, email string) error
+	confirmPasswordResetFunc func(ctx context.Context, token, newPassword string) error
 }
 
-func (m *mockAuthService) Register(ctx context.Context, email, username, password string, avatar *string) (string, error) {
+func (m *mockAuthService) Register(ctx context.Context, email, username, password string, avatar *string) error {
 	return m.registerFunc(ctx, email, username, password, avatar)
 }
 func (m *mockAuthService) Login(ctx context.Context, email, password string) (string, error) {
 	return m.loginFunc(ctx, email, password)
+}
+func (m *mockAuthService) VerifyOtp(ctx context.Context, email, otp string) (string, error) {
+	return m.verifyOTPFunc(ctx, email, otp)
+}
+func (m *mockAuthService) RequestPasswordReset(ctx context.Context, email string) error {
+	return m.requestPasswordResetFunc(ctx, email)
+}
+func (m *mockAuthService) ConfirmPasswordReset(ctx context.Context, token, newPassword string) error {
+	return m.confirmPasswordResetFunc(ctx, token, newPassword)
 }
 
 func TestAuthController_Register(t *testing.T) {
 	tests := []struct {
 		name           string
 		requestBody    interface{}
-		mockRegister   func(ctx context.Context, email, username, password string, avatar *string) (string, error)
+		mockRegister   func(ctx context.Context, email, username, password string, avatar *string) error
 		expectedStatus int
 		expectedBody   map[string]interface{}
 	}{
@@ -42,10 +54,10 @@ func TestAuthController_Register(t *testing.T) {
 				Password: "password123",
 				Username: "testuser",
 			},
-			mockRegister: func(ctx context.Context, email, username, password string, avatar *string) (string, error) {
-				return "user-123", nil
+			mockRegister: func(ctx context.Context, email, username, password string, avatar *string) error {
+				return nil
 			},
-			expectedStatus: http.StatusCreated,
+			expectedStatus: http.StatusAccepted,
 		},
 		{
 			name: "email already exists",
@@ -54,8 +66,8 @@ func TestAuthController_Register(t *testing.T) {
 				Password: "pass",
 				Username: "newuser",
 			},
-			mockRegister: func(ctx context.Context, email, username, password string, avatar *string) (string, error) {
-				return "", errors.ConflictError("email") // changed
+			mockRegister: func(ctx context.Context, email, username, password string, avatar *string) error {
+				return errors.ConflictError("email")
 			},
 			expectedStatus: http.StatusConflict,
 			expectedBody: map[string]interface{}{
@@ -68,19 +80,23 @@ func TestAuthController_Register(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// ARRANGE
-			mockSvc := &mockAuthService{registerFunc: tt.mockRegister}
+			mockSvc := &mockAuthService{
+				registerFunc: tt.mockRegister,
+				// Provide dummy implementations for other methods (they won't be called)
+				loginFunc:                func(ctx context.Context, email, password string) (string, error) { return "", nil },
+				verifyOTPFunc:            func(ctx context.Context, email, otp string) (string, error) { return "", nil },
+				requestPasswordResetFunc: func(ctx context.Context, email string) error { return nil },
+				confirmPasswordResetFunc: func(ctx context.Context, token, newPassword string) error { return nil },
+			}
 			ctrl := controller.NewAuthController(mockSvc)
 
 			body, _ := json.Marshal(tt.requestBody)
 			req := httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(body))
-			req.Header.Set("X-Request-ID", "test-id") // fallback for GetRequestID
+			req.Header.Set("X-Request-ID", "test-id")
 			w := httptest.NewRecorder()
 
-			// ACT
 			ctrl.Register(w, req)
 
-			// ASSERT
 			assert.Equal(t, tt.expectedStatus, w.Code)
 			if tt.expectedBody != nil {
 				var resp map[string]interface{}
@@ -113,25 +129,29 @@ func TestAuthController_Login(t *testing.T) {
 			requestBody: dto.LoginRequest{Email: "wrong", Password: "wrong"},
 			mockLogin: func(ctx context.Context, email, password string) (string, error) {
 				return "", errors.UnauthorizedError("invalid credentials")
-			}, // changed
+			},
 			expectedStatus: http.StatusUnauthorized,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// ARRANGE
-			mockSvc := &mockAuthService{loginFunc: tt.mockLogin}
+			mockSvc := &mockAuthService{
+				loginFunc: tt.mockLogin,
+				// Dummy implementations for other methods
+				registerFunc:             func(ctx context.Context, email, username, password string, avatar *string) error { return nil },
+				verifyOTPFunc:            func(ctx context.Context, email, otp string) (string, error) { return "", nil },
+				requestPasswordResetFunc: func(ctx context.Context, email string) error { return nil },
+				confirmPasswordResetFunc: func(ctx context.Context, token, newPassword string) error { return nil },
+			}
 			ctrl := controller.NewAuthController(mockSvc)
 			body, _ := json.Marshal(tt.requestBody)
 			req := httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(body))
 			req.Header.Set("X-Request-ID", "test-id")
 			w := httptest.NewRecorder()
 
-			// ACT
 			ctrl.Login(w, req)
 
-			// ASSERT
 			assert.Equal(t, tt.expectedStatus, w.Code)
 			if tt.expectedToken != "" {
 				var resp dto.LoginResponse

@@ -17,24 +17,12 @@ import (
 
 const (
 	BearerAuthScopes = "BearerAuth.Scopes"
-	// Defines values for HealthResponseStatus.
+)
 
+// Defines values for HealthResponseDataStatus.
+const (
 	Healthy   HealthResponseDataStatus = "healthy"
 	Unhealthy HealthResponseDataStatus = "unhealthy"
-	// Defines values for HealthResponseDataStatus.
-	Error   HealthResponseStatus = "error"
-	Success HealthResponseStatus = "success"
-	// Defines values for UserProfileRole.
-	UserProfileRoleAdmin UserProfileRole = "admin"
-	UserProfileRoleUser  UserProfileRole = "user"
-
-	// Defines values for CreateUserJSONBodyRole.
-	CreateUserJSONBodyRoleAdmin CreateUserJSONBodyRole = "admin"
-	CreateUserJSONBodyRoleUser  CreateUserJSONBodyRole = "user"
-
-	// Defines values for UpdateUserJSONBodyRole.
-	Admin UpdateUserJSONBodyRole = "admin"
-	User  UpdateUserJSONBodyRole = "user"
 )
 
 // Valid indicates whether the value is a known member of the HealthResponseDataStatus enum.
@@ -49,6 +37,12 @@ func (e HealthResponseDataStatus) Valid() bool {
 	}
 }
 
+// Defines values for HealthResponseStatus.
+const (
+	Error   HealthResponseStatus = "error"
+	Success HealthResponseStatus = "success"
+)
+
 // Valid indicates whether the value is a known member of the HealthResponseStatus enum.
 func (e HealthResponseStatus) Valid() bool {
 	switch e {
@@ -60,6 +54,12 @@ func (e HealthResponseStatus) Valid() bool {
 		return false
 	}
 }
+
+// Defines values for UserProfileRole.
+const (
+	UserProfileRoleAdmin UserProfileRole = "admin"
+	UserProfileRoleUser  UserProfileRole = "user"
+)
 
 // Valid indicates whether the value is a known member of the UserProfileRole enum.
 func (e UserProfileRole) Valid() bool {
@@ -73,6 +73,12 @@ func (e UserProfileRole) Valid() bool {
 	}
 }
 
+// Defines values for CreateUserJSONBodyRole.
+const (
+	CreateUserJSONBodyRoleAdmin CreateUserJSONBodyRole = "admin"
+	CreateUserJSONBodyRoleUser  CreateUserJSONBodyRole = "user"
+)
+
 // Valid indicates whether the value is a known member of the CreateUserJSONBodyRole enum.
 func (e CreateUserJSONBodyRole) Valid() bool {
 	switch e {
@@ -84,6 +90,12 @@ func (e CreateUserJSONBodyRole) Valid() bool {
 		return false
 	}
 }
+
+// Defines values for UpdateUserJSONBodyRole.
+const (
+	Admin UpdateUserJSONBodyRole = "admin"
+	User  UpdateUserJSONBodyRole = "user"
+)
 
 // Valid indicates whether the value is a known member of the UpdateUserJSONBodyRole enum.
 func (e UpdateUserJSONBodyRole) Valid() bool {
@@ -134,14 +146,16 @@ type UserPreferences struct {
 
 // UserProfile defines model for UserProfile.
 type UserProfile struct {
-	Id       string `json:"id"`
-	Username string `json:"username"`
 	// Avatar URL to profile picture (optional)
 	Avatar    *string         `json:"avatar,omitempty"`
-	Email     string          `json:"email"`
-	Role      UserProfileRole `json:"role"`
 	CreatedAt *time.Time      `json:"created_at,omitempty"`
+	Email     string          `json:"email"`
+	Id        string          `json:"id"`
+	Role      UserProfileRole `json:"role"`
 	UpdatedAt *time.Time      `json:"updated_at,omitempty"`
+
+	// Username Unique username
+	Username string `json:"username"`
 }
 
 // UserProfileRole defines model for UserProfile.Role.
@@ -183,6 +197,23 @@ type LoginJSONBody struct {
 	Password string `json:"password"`
 }
 
+// VerifyOtpJSONBody defines parameters for VerifyOtp.
+type VerifyOtpJSONBody struct {
+	Email string `json:"email"`
+	Otp   string `json:"otp"`
+}
+
+// ConfirmPasswordResetJSONBody defines parameters for ConfirmPasswordReset.
+type ConfirmPasswordResetJSONBody struct {
+	NewPassword string `json:"new_password"`
+	Token       string `json:"token"`
+}
+
+// RequestPasswordResetJSONBody defines parameters for RequestPasswordReset.
+type RequestPasswordResetJSONBody struct {
+	Email string `json:"email"`
+}
+
 // RegisterJSONBody defines parameters for Register.
 type RegisterJSONBody struct {
 	// Avatar URL to profile picture (optional)
@@ -209,6 +240,15 @@ type UpdateUserJSONRequestBody UpdateUserJSONBody
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
 
+// VerifyOtpJSONRequestBody defines body for VerifyOtp for application/json ContentType.
+type VerifyOtpJSONRequestBody VerifyOtpJSONBody
+
+// ConfirmPasswordResetJSONRequestBody defines body for ConfirmPasswordReset for application/json ContentType.
+type ConfirmPasswordResetJSONRequestBody ConfirmPasswordResetJSONBody
+
+// RequestPasswordResetJSONRequestBody defines body for RequestPasswordReset for application/json ContentType.
+type RequestPasswordResetJSONRequestBody RequestPasswordResetJSONBody
+
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody RegisterJSONBody
 
@@ -218,34 +258,43 @@ type UpdatePreferencesJSONRequestBody UpdatePreferencesJSONBody
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 	// List all users (admin only)
-	// (GET /api/v1/admin/users)
+	// (GET /admin/users)
 	ListUsers(w http.ResponseWriter, r *http.Request, params ListUsersParams)
 	// Create a user (admin only)
-	// (POST /api/v1/admin/users)
+	// (POST /admin/users)
 	CreateUser(w http.ResponseWriter, r *http.Request)
 	// Delete user (admin only)
-	// (DELETE /api/v1/admin/users/{id})
+	// (DELETE /admin/users/{id})
 	DeleteUser(w http.ResponseWriter, r *http.Request, id string)
 	// Get user by ID (admin only)
-	// (GET /api/v1/admin/users/{id})
+	// (GET /admin/users/{id})
 	GetUser(w http.ResponseWriter, r *http.Request, id string)
 	// Update user (admin only)
-	// (PUT /api/v1/admin/users/{id})
+	// (PUT /admin/users/{id})
 	UpdateUser(w http.ResponseWriter, r *http.Request, id string)
 	// Login and obtain JWT
-	// (POST /api/v1/auth/login)
+	// (POST /auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
-	// Register a new user
-	// (POST /api/v1/auth/register)
+	// Verify OTP and activate account
+	// (POST /auth/otp/verify)
+	VerifyOtp(w http.ResponseWriter, r *http.Request)
+	// Confirm password reset with token
+	// (POST /auth/password-reset/confirm)
+	ConfirmPasswordReset(w http.ResponseWriter, r *http.Request)
+	// Request password reset email
+	// (POST /auth/password-reset/request)
+	RequestPasswordReset(w http.ResponseWriter, r *http.Request)
+	// Register a new user (pending, OTP sent via email)
+	// (POST /auth/register)
 	Register(w http.ResponseWriter, r *http.Request)
 	// Health check
-	// (GET /api/v1/health)
+	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
 	// Get current user profile
-	// (GET /api/v1/users/me)
+	// (GET /users/me)
 	GetMe(w http.ResponseWriter, r *http.Request)
 	// Update user preferences
-	// (PATCH /api/v1/users/me/preferences)
+	// (PATCH /users/me/preferences)
 	UpdatePreferences(w http.ResponseWriter, r *http.Request)
 }
 
@@ -417,6 +466,48 @@ func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request)
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Login(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyOtp operation middleware
+func (siw *ServerInterfaceWrapper) VerifyOtp(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyOtp(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ConfirmPasswordReset operation middleware
+func (siw *ServerInterfaceWrapper) ConfirmPasswordReset(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ConfirmPasswordReset(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RequestPasswordReset operation middleware
+func (siw *ServerInterfaceWrapper) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RequestPasswordReset(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -614,16 +705,19 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	m.HandleFunc("GET "+options.BaseURL+"/api/v1/admin/users", wrapper.ListUsers)
-	m.HandleFunc("POST "+options.BaseURL+"/api/v1/admin/users", wrapper.CreateUser)
-	m.HandleFunc("DELETE "+options.BaseURL+"/api/v1/admin/users/{id}", wrapper.DeleteUser)
-	m.HandleFunc("GET "+options.BaseURL+"/api/v1/admin/users/{id}", wrapper.GetUser)
-	m.HandleFunc("PUT "+options.BaseURL+"/api/v1/admin/users/{id}", wrapper.UpdateUser)
-	m.HandleFunc("POST "+options.BaseURL+"/api/v1/auth/login", wrapper.Login)
-	m.HandleFunc("POST "+options.BaseURL+"/api/v1/auth/register", wrapper.Register)
-	m.HandleFunc("GET "+options.BaseURL+"/api/v1/health", wrapper.GetHealth)
-	m.HandleFunc("GET "+options.BaseURL+"/api/v1/users/me", wrapper.GetMe)
-	m.HandleFunc("PATCH "+options.BaseURL+"/api/v1/users/me/preferences", wrapper.UpdatePreferences)
+	m.HandleFunc("GET "+options.BaseURL+"/admin/users", wrapper.ListUsers)
+	m.HandleFunc("POST "+options.BaseURL+"/admin/users", wrapper.CreateUser)
+	m.HandleFunc("DELETE "+options.BaseURL+"/admin/users/{id}", wrapper.DeleteUser)
+	m.HandleFunc("GET "+options.BaseURL+"/admin/users/{id}", wrapper.GetUser)
+	m.HandleFunc("PUT "+options.BaseURL+"/admin/users/{id}", wrapper.UpdateUser)
+	m.HandleFunc("POST "+options.BaseURL+"/auth/login", wrapper.Login)
+	m.HandleFunc("POST "+options.BaseURL+"/auth/otp/verify", wrapper.VerifyOtp)
+	m.HandleFunc("POST "+options.BaseURL+"/auth/password-reset/confirm", wrapper.ConfirmPasswordReset)
+	m.HandleFunc("POST "+options.BaseURL+"/auth/password-reset/request", wrapper.RequestPasswordReset)
+	m.HandleFunc("POST "+options.BaseURL+"/auth/register", wrapper.Register)
+	m.HandleFunc("GET "+options.BaseURL+"/health", wrapper.GetHealth)
+	m.HandleFunc("GET "+options.BaseURL+"/users/me", wrapper.GetMe)
+	m.HandleFunc("PATCH "+options.BaseURL+"/users/me/preferences", wrapper.UpdatePreferences)
 
 	return m
 }

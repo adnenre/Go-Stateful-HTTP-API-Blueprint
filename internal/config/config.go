@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"strconv"
 	"strings"
@@ -40,34 +41,52 @@ type Config struct {
 
 	// Error documentation base URL (optional)
 	ErrorDocsBaseURL string // e.g., "http://localhost:8080" or "https://api.example.com"
+
+	// Email SMTP (optional – used for sending OTP and password reset emails)
+	SMTPHost     string // SMTP server host (e.g., smtp.gmail.com)
+	SMTPPort     int    // SMTP port (default 587)
+	SMTPUser     string // SMTP auth username
+	SMTPPassword string // SMTP auth password
+	SMTPFrom     string // From email address
+
+	// Public paths (exact) that bypass JWT authentication (optional)
+	PublicPaths []string
+
+	// Public prefixes that bypass JWT authentication (optional)
+	PublicPrefixes []string
 }
 
 // Load reads configuration from environment variables and .env file.
-// It fails fast if any required variable is missing.
-func Load() (*Config, error) {
+// It fails fast (logs and exits) if any required variable is missing.
+func Load() *Config {
 	// Load .env file for local development (ignored if not found, which is fine for production)
 	_ = godotenv.Load()
 
 	serverPort := getEnv("SERVER_PORT", "8080")
 	databaseURL, err := getEnvRequired("DATABASE_URL")
 	if err != nil {
-		return nil, err
+		slog.Error("configuration error", "error", err)
+		os.Exit(1)
 	}
 	redisURL, err := getEnvRequired("REDIS_URL")
 	if err != nil {
-		return nil, err
+		slog.Error("configuration error", "error", err)
+		os.Exit(1)
 	}
 	jwtSecret, err := getEnvRequired("JWT_SECRET")
 	if err != nil {
-		return nil, err
+		slog.Error("configuration error", "error", err)
+		os.Exit(1)
 	}
 	jwtExpiry, err := getEnvDurationRequired("JWT_EXPIRY")
 	if err != nil {
-		return nil, err
+		slog.Error("configuration error", "error", err)
+		os.Exit(1)
 	}
 	rateLimit, err := getEnvIntRequired("RATE_LIMIT_PER_SEC")
 	if err != nil {
-		return nil, err
+		slog.Error("configuration error", "error", err)
+		os.Exit(1)
 	}
 
 	// CORS settings: defaults are permissive for local development.
@@ -82,6 +101,33 @@ func Load() (*Config, error) {
 	// Error documentation base URL (optional)
 	errorDocsBaseURL := getEnv("ERROR_DOCS_BASE_URL", "")
 
+	// Email SMTP (optional)
+	smtpHost := getEnv("SMTP_HOST", "")
+	smtpPort := getEnvInt("SMTP_PORT", 587)
+	smtpUser := getEnv("SMTP_USER", "")
+	smtpPassword := getEnv("SMTP_PASSWORD", "")
+	smtpFrom := getEnv("SMTP_FROM", "")
+
+	// Public paths (exact) – no defaults; must be set via env if needed
+	publicPathsStr := getEnv("PUBLIC_PATHS", "")
+	var publicPaths []string
+	if publicPathsStr != "" {
+		publicPaths = strings.Split(publicPathsStr, ",")
+		for i, p := range publicPaths {
+			publicPaths[i] = strings.TrimSpace(p)
+		}
+	}
+
+	// Public prefixes – no defaults; must be set via env if needed
+	publicPrefixesStr := getEnv("PUBLIC_PREFIXES", "")
+	var publicPrefixes []string
+	if publicPrefixesStr != "" {
+		publicPrefixes = strings.Split(publicPrefixesStr, ",")
+		for i, p := range publicPrefixes {
+			publicPrefixes[i] = strings.TrimSpace(p)
+		}
+	}
+
 	return &Config{
 		ServerPort:           serverPort,
 		DatabaseURL:          databaseURL,
@@ -95,7 +141,14 @@ func Load() (*Config, error) {
 		CORSAllowCredentials: corsCredentials,
 		HSTSMaxAge:           hstsMaxAge,
 		ErrorDocsBaseURL:     errorDocsBaseURL,
-	}, nil
+		SMTPHost:             smtpHost,
+		SMTPPort:             smtpPort,
+		SMTPUser:             smtpUser,
+		SMTPPassword:         smtpPassword,
+		SMTPFrom:             smtpFrom,
+		PublicPaths:          publicPaths,
+		PublicPrefixes:       publicPrefixes,
+	}
 }
 
 // getEnv returns value or default if not set.
