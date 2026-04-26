@@ -21,6 +21,7 @@ import (
 
 	"rest-api-blueprint/internal/auth"
 	"rest-api-blueprint/internal/config"
+	"rest-api-blueprint/internal/email"
 	adminController "rest-api-blueprint/internal/features/admin/controller"
 	adminDto "rest-api-blueprint/internal/features/admin/dto"
 	adminRepo "rest-api-blueprint/internal/features/admin/repository"
@@ -70,12 +71,10 @@ func TestAdminIntegration(t *testing.T) {
 		t.Skipf("failed to migrate: %v", err)
 	}
 
-	// ============================================================
-	// HARD DELETE ANY PREVIOUS TEST DATA (use Unscoped to permanently remove)
-	// ============================================================
+	// Hard delete any previous test data
 	gormDB.Unscoped().Where("email IN ?", []string{"admin@example.com", "newuser@example.com", "admin-integration@example.com"}).Delete(&authModel.User{})
 
-	// Redis (not strictly required for admin)
+	// Redis
 	redisAddr := os.Getenv("REDIS_URL")
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
@@ -83,7 +82,9 @@ func TestAdminIntegration(t *testing.T) {
 	redisClient := redis.NewClient(&redis.Options{Addr: redisAddr})
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	_ = redisClient.Ping(ctx).Err()
+	if err := redisClient.Ping(ctx).Err(); err != nil {
+		t.Skipf("redis unavailable: %v", err)
+	}
 	defer redisClient.Close()
 
 	// Config
@@ -92,16 +93,34 @@ func TestAdminIntegration(t *testing.T) {
 		JWTExpiry: 15 * time.Minute,
 	}
 
+	// Email sender (mock, logs to stdout)
+	emailSender := &email.MockSender{}
+
 	// Create an admin user via auth service (role "admin")
 	authRepoInstance := authRepo.NewRepository(gormDB)
-	authSvc := authService.NewService(authRepoInstance, cfg)
-	adminID, err := authSvc.Register(context.Background(), "admin@example.com", "adminuser", "adminpass", nil)
+	authSvc := authService.NewService(authRepoInstance, cfg, redisClient, emailSender)
+
+	// Register admin user (creates pending user, sends OTP)
+	err = authSvc.Register(context.Background(), "admin@example.com", "adminuser", "adminpass", nil)
 	if err != nil {
 		t.Fatalf("failed to create admin user: %v", err)
 	}
-	// Promote user to admin (direct DB update, because registration only creates "user")
+
+	// Retrieve the user from DB to get its ID (since Register no longer returns it)
+	var adminUser authModel.User
+	if err := gormDB.Where("email = ?", "admin@example.com").First(&adminUser).Error; err != nil {
+		t.Fatalf("failed to find admin user: %v", err)
+	}
+	adminID := adminUser.ID
+
+	// Promote user to admin (direct DB update)
 	if err := gormDB.Model(&authModel.User{}).Where("id = ?", adminID).Update("role", "admin").Error; err != nil {
 		t.Fatalf("failed to promote to admin: %v", err)
+	}
+
+	// Activate the admin user (bypass OTP for test – set status to active directly)
+	if err := gormDB.Model(&authModel.User{}).Where("id = ?", adminID).Update("status", "active").Error; err != nil {
+		t.Fatalf("failed to activate admin user: %v", err)
 	}
 
 	// Login as admin to obtain token and claims

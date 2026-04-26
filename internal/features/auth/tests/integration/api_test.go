@@ -20,6 +20,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"rest-api-blueprint/internal/config"
+	"rest-api-blueprint/internal/email"
 	"rest-api-blueprint/internal/features/auth/controller"
 	"rest-api-blueprint/internal/features/auth/dto"
 	authModel "rest-api-blueprint/internal/features/auth/model"
@@ -64,10 +65,10 @@ func TestAuthIntegration(t *testing.T) {
 		t.Skipf("failed to migrate: %v", err)
 	}
 
-	// Hard delete any leftover test user (use Unscoped to bypass soft delete)
+	// Clean previous test data (hard delete)
 	gormDB.Unscoped().Where("email = ?", "integration@example.com").Delete(&authModel.User{})
 
-	// Redis (not strictly needed for auth, but we keep for consistency)
+	// Redis
 	redisAddr := os.Getenv("REDIS_URL")
 	if redisAddr == "" {
 		redisAddr = "localhost:6379"
@@ -80,19 +81,21 @@ func TestAuthIntegration(t *testing.T) {
 	}
 	defer redisClient.Close()
 
-	// Config for JWT (use dummy secret for test)
+	// Config for JWT
 	cfg := &config.Config{
 		JWTSecret: "test-secret",
 		JWTExpiry: 15 * time.Minute,
 	}
 
-	// Wire dependencies
+	// Wire dependencies (use real service, no email mock? We'll use a mock email that logs, but we need OTP from Redis)
+	// Create a mock email sender that logs (we can use the existing MockSender)
+	emailSender := &email.MockSender{} // we need to import email package
 	repo := repository.NewRepository(gormDB)
-	svc := service.NewService(repo, cfg)
+	svc := service.NewService(repo, cfg, redisClient, emailSender)
 	ctrl := controller.NewAuthController(svc)
 
 	// ============================================================
-	// ACT & ASSERT – Register
+	// ACT & ASSERT – Register (should return 202 Accepted)
 	// ============================================================
 	registerReq := dto.RegisterRequest{
 		Email:    "integration@example.com",
@@ -104,26 +107,54 @@ func TestAuthIntegration(t *testing.T) {
 	httpReq.Header.Set("Content-Type", "application/json")
 	w := httptest.NewRecorder()
 	ctrl.Register(w, httpReq)
-
-	if w.Code != http.StatusCreated {
-		// Log the response body to see the error
-		t.Logf("Response body: %s", w.Body.String())
-		t.Fatalf("expected 201, got %d", w.Code)
+	if w.Code != http.StatusAccepted {
+		t.Fatalf("expected 202, got %d", w.Code)
 	}
 
 	// ============================================================
-	// ACT & ASSERT – Login
+	// Retrieve OTP from Redis
+	// ============================================================
+	otp, err := redisClient.Get(context.Background(), fmt.Sprintf("otp:%s", registerReq.Email)).Result()
+	if err != nil {
+		t.Fatalf("failed to get OTP from Redis: %v", err)
+	}
+	t.Logf("OTP for %s: %s", registerReq.Email, otp)
+
+	// ============================================================
+	// ACT & ASSERT – Verify OTP
+	// ============================================================
+	verifyReq := dto.VerifyOTPRequest{
+		Email: registerReq.Email,
+		OTP:   otp,
+	}
+	body, _ = json.Marshal(verifyReq)
+	httpReq = httptest.NewRequest("POST", "/api/v1/auth/otp/verify", bytes.NewReader(body))
+	httpReq.Header.Set("Content-Type", "application/json")
+	w = httptest.NewRecorder()
+	ctrl.VerifyOTP(w, httpReq)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", w.Code)
+	}
+	var verifyResp dto.LoginResponse
+	if err := json.NewDecoder(w.Body).Decode(&verifyResp); err != nil {
+		t.Fatal(err)
+	}
+	if verifyResp.Token == "" {
+		t.Error("token empty after OTP verification")
+	}
+
+	// ============================================================
+	// ACT & ASSERT – Login with the same credentials
 	// ============================================================
 	loginReq := dto.LoginRequest{
-		Email:    "integration@example.com",
-		Password: "testpass123",
+		Email:    registerReq.Email,
+		Password: registerReq.Password,
 	}
 	body, _ = json.Marshal(loginReq)
 	httpReq = httptest.NewRequest("POST", "/api/v1/auth/login", bytes.NewReader(body))
 	httpReq.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	ctrl.Login(w, httpReq)
-
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
@@ -136,7 +167,7 @@ func TestAuthIntegration(t *testing.T) {
 	}
 
 	// ============================================================
-	// ACT & ASSERT – Duplicate registration (must fail)
+	// ACT & ASSERT – Duplicate registration (should return 409)
 	// ============================================================
 	body, _ = json.Marshal(registerReq)
 	httpReq = httptest.NewRequest("POST", "/api/v1/auth/register", bytes.NewReader(body))
