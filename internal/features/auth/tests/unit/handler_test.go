@@ -29,7 +29,7 @@ func (m *mockAuthService) Register(ctx context.Context, email, username, passwor
 func (m *mockAuthService) Login(ctx context.Context, email, password string) (string, error) {
 	return m.loginFunc(ctx, email, password)
 }
-func (m *mockAuthService) VerifyOTP(ctx context.Context, email, otp string) (string, error) {
+func (m *mockAuthService) VerifyOtp(ctx context.Context, email, otp string) (string, error) {
 	return m.verifyOTPFunc(ctx, email, otp)
 }
 func (m *mockAuthService) RequestPasswordReset(ctx context.Context, email string) error {

@@ -131,7 +131,7 @@ func TestAuthIntegration(t *testing.T) {
 	httpReq = httptest.NewRequest("POST", "/api/v1/auth/otp/verify", bytes.NewReader(body))
 	httpReq.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
-	ctrl.VerifyOTP(w, httpReq)
+	ctrl.VerifyOtp(w, httpReq)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
