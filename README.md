@@ -1,4 +1,4 @@
-# REST API Blueprint v3.0.0
+# REST API Blueprint v3.1.0
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/adnenrebai/rest-api-blueprint)](https://hub.docker.com/r/adnenrebai/rest-api-blueprint)
 [![CI](https://github.com/adnenre/Go-REST-API-Blueprint/actions/workflows/ci.yml/badge.svg)](https://github.com/adnenre/Go-REST-API-Blueprint/actions/workflows/ci.yml)
@@ -108,8 +108,8 @@ docker run -p 8080:8080 adnenrebai/rest-api-blueprint:main
 Or use a specific version:
 
 ```bash
-docker pull adnenrebai/rest-api-blueprint:v3.0.0
-docker run -p 8080:8080 adnenrebai/rest-api-blueprint:v3.0.0
+docker pull adnenrebai/rest-api-blueprint:v3.1.0
+docker run -p 8080:8080 adnenrebai/rest-api-blueprint:v3.1.0
 ```
 
 Then test the health endpoint:
