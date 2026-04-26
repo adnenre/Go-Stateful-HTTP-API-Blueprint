@@ -14,13 +14,26 @@ type ContextKeyUser struct{}
 
 var UserKey = ContextKeyUser{}
 
-func JWTAuthMiddleware(cfg *config.Config, publicPaths map[string]bool) func(http.Handler) http.Handler {
+// JWTAuthMiddleware validates the JWT token and injects claims into the request context.
+// It skips authentication for:
+// - exact paths listed in publicPaths
+// - any path starting with any prefix in publicPrefixes (e.g., "/docs/", "/errors/")
+func JWTAuthMiddleware(cfg *config.Config, publicPaths map[string]bool, publicPrefixes []string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Exact path match
 			if publicPaths[r.URL.Path] {
 				next.ServeHTTP(w, r)
 				return
 			}
+			// Prefix match
+			for _, prefix := range publicPrefixes {
+				if strings.HasPrefix(r.URL.Path, prefix) {
+					next.ServeHTTP(w, r)
+					return
+				}
+			}
+			// Authentication required
 			authHeader := r.Header.Get("Authorization")
 			if authHeader == "" {
 				err := errors.UnauthorizedError("missing authorization header")

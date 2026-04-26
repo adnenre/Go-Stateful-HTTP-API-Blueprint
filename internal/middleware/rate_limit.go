@@ -36,6 +36,12 @@ func NewRateLimiter(rdb *redis.Client, limit int) *RateLimiter {
 func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Skip rate limiting for documentation paths
+			if strings.HasPrefix(r.URL.Path, "/docs/") || strings.HasPrefix(r.URL.Path, "/errors/") || r.URL.Path == "/docs" || r.URL.Path == "/errors" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
 			if rl.bypass || rl.limit <= 0 {
 				slog.Debug("rate limiter bypassed", "limit", rl.limit, "bypass", rl.bypass)
 				next.ServeHTTP(w, r)
@@ -51,7 +57,6 @@ func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(htt
 			if err != nil {
 				slog.Error("rate limiter redis error", "error", err, "key", key)
 				instance := GetRequestID(r)
-				// Use InternalError domain error
 				errDomain := errors.InternalError("Rate limiter error: " + err.Error())
 				errors.WriteProblem(w, r, errDomain, instance)
 				return
@@ -71,7 +76,6 @@ func (rl *RateLimiter) Middleware(keyFunc func(r *http.Request) string) func(htt
 				w.Header().Set("X-RateLimit-Reset", strconv.Itoa(int(res.RetryAfter.Seconds())))
 				w.Header().Set("Retry-After", strconv.Itoa(int(res.RetryAfter.Seconds())))
 				instance := GetRequestID(r)
-				// Use TooManyRequestsError domain error
 				errDomain := errors.TooManyRequestsError("Rate limit exceeded. Please retry later.")
 				errors.WriteProblem(w, r, errDomain, instance)
 				return
