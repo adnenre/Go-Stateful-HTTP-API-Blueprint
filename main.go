@@ -3,13 +3,13 @@ package main
 import (
 	"embed"
 	"io/fs"
-	"log"
 	"log/slog"
 	"net/http"
 	"os"
 	"rest-api-blueprint/internal/cache"
 	"rest-api-blueprint/internal/config"
 	"rest-api-blueprint/internal/database"
+	"rest-api-blueprint/internal/email"
 	"rest-api-blueprint/internal/errors"
 	"rest-api-blueprint/internal/features/admin"
 	adminController "rest-api-blueprint/internal/features/admin/controller"
@@ -60,10 +60,7 @@ func main() {
 	// ============================================================
 	// 1. LOAD CONFIGURATION (fail‑fast if missing required vars)
 	// ============================================================
-	cfg, err := config.Load()
-	if err != nil {
-		log.Fatalf("config error: %v", err)
-	}
+	cfg := config.Load()
 
 	// ============================================================
 	// 2. INITIALIZE STRUCTURED LOGGING (JSON output)
@@ -85,7 +82,10 @@ func main() {
 	// 4. CONNECT TO REDIS (for rate limiting, health checks, cache)
 	// ============================================================
 	cache.InitRedis(cfg.RedisURL)
-
+	// ============================================================
+	// 4.1 INITIALIZE EMAIL SENDER
+	// ============================================================
+	emailSender := email.InitSender(cfg)
 	// ============================================================
 	// 5. RUN DATABASE MIGRATIONS (users and preferences tables)
 	// ============================================================
@@ -102,7 +102,7 @@ func main() {
 
 	// Auth feature
 	authRepo := authRepository.NewRepository(database.DB)
-	authSvc := authService.NewService(authRepo, cfg)
+	authSvc := authService.NewService(authRepo, cfg, cache.Client, emailSender)
 	authCtrl := authController.NewAuthController(authSvc)
 
 	// User feature
@@ -160,7 +160,7 @@ func main() {
 	// ============================================================
 	// 9. REGISTER API ROUTES (generated from OpenAPI spec)
 	// ============================================================
-	handler := gen.HandlerFromMux(server, mux) // mux already contains static routes
+	handler := gen.HandlerFromMuxWithBaseURL(server, mux, "/api/v1") // mux already contains static routes
 
 	// ============================================================
 	// 10. SETUP RATE LIMITING
@@ -173,36 +173,13 @@ func main() {
 	// Execution order (outermost first):
 	//   PanicRecovery → SecurityHeaders → CORS → RequestID → Logging → ValidateRequest → JWTAuth → RateLimiter → baseHandler
 	//
-	// Public paths that do NOT require JWT (used by JWTAuthMiddleware):
-	//   - /api/v1/health
-	//   - /api/v1/auth/login
-	//   - /api/v1/auth/register
-	//   - /openapi.yaml
-	//   - /favicon.ico
-	// Public prefixes:
-	//   - /docs/
-	//   - /errors/
-	//   - /.well-known/ (optional)
-	// ============================================================
-	publicPaths := map[string]bool{
-		"/api/v1/health":        true,
-		"/api/v1/auth/login":    true,
-		"/api/v1/auth/register": true,
-		"/openapi.yaml":         true,
-		"/favicon.ico":          true,
-	}
-	publicPrefixes := []string{
-		"/docs/",
-		"/errors/",
-		"/.well-known/", // optional, for Chrome DevTools
-	}
 
 	// Build chain from innermost to outermost:
 	// (a) Rate limiting (innermost)
 	handler = rateLimiter.Middleware(middleware.DefaultIPKeyFunc)(handler)
 
 	// (b) JWT authentication – validates token, injects claims (skips public paths)
-	handler = middleware.JWTAuthMiddleware(cfg, publicPaths, publicPrefixes)(handler)
+	handler = middleware.JWTAuthMiddleware(cfg)(handler)
 
 	// (c) Global validation – decodes, validates, and restores request body
 	handler = middleware.ValidateRequest(dtoResolver)(handler)
