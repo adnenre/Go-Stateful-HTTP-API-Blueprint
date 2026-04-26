@@ -70,10 +70,10 @@ func TestAdminIntegration(t *testing.T) {
 		t.Skipf("failed to migrate: %v", err)
 	}
 
-	// Clean previous test data
-	gormDB.Where("email = ?", "admin@example.com").Delete(&authModel.User{})
-	gormDB.Where("email = ?", "newuser@example.com").Delete(&authModel.User{})
-	gormDB.Where("email = ?", "admin-integration@example.com").Delete(&authModel.User{})
+	// ============================================================
+	// HARD DELETE ANY PREVIOUS TEST DATA (use Unscoped to permanently remove)
+	// ============================================================
+	gormDB.Unscoped().Where("email IN ?", []string{"admin@example.com", "newuser@example.com", "admin-integration@example.com"}).Delete(&authModel.User{})
 
 	// Redis (not strictly required for admin)
 	redisAddr := os.Getenv("REDIS_URL")
@@ -122,7 +122,6 @@ func TestAdminIntegration(t *testing.T) {
 	// Helper to inject claims into request context
 	injectClaims := func(r *http.Request) *http.Request {
 		ctx := context.WithValue(r.Context(), middleware.UserKey, claims)
-		// Also inject a dummy request ID (optional)
 		ctx = context.WithValue(ctx, middleware.RequestIDKey, "test-request-id")
 		return r.WithContext(ctx)
 	}

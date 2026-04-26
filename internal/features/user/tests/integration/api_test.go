@@ -68,9 +68,11 @@ func TestUserIntegration(t *testing.T) {
 		t.Skipf("failed to migrate: %v", err)
 	}
 
-	// Clean previous test data
-	gormDB.Where("email = ?", "user-integration@example.com").Delete(&authModel.User{})
-	gormDB.Where("user_id = ?", "user-integration-id").Delete(&userModel.UserPreferences{})
+	// ============================================================
+	// HARD DELETE ANY PREVIOUS TEST DATA FOR USER-INTEGRATION
+	// ============================================================
+	gormDB.Unscoped().Where("email = ?", "user-integration@example.com").Delete(&authModel.User{})
+	gormDB.Unscoped().Where("user_id = ?", "user-integration-id").Delete(&userModel.UserPreferences{})
 
 	// Redis (not required for user, but we still connect to avoid panic)
 	redisAddr := os.Getenv("REDIS_URL")

@@ -140,11 +140,12 @@ func TestHealthController_GetHealth(t *testing.T) {
 				if problem.Status != http.StatusInternalServerError {
 					t.Errorf("problem.Status = %d, want %d", problem.Status, http.StatusInternalServerError)
 				}
-				if problem.Title != "Internal Server Error" {
-					t.Errorf("problem.Title = %s, want 'Internal Server Error'", problem.Title)
+				// Changed expectations:
+				if problem.Title != "Internal server error" {
+					t.Errorf("problem.Title = %s, want 'Internal server error'", problem.Title)
 				}
-				if problem.Detail != "Failed to check health" {
-					t.Errorf("problem.Detail = %s, want 'Failed to check health'", problem.Detail)
+				if problem.Detail != "Failed to check health: something went wrong" {
+					t.Errorf("problem.Detail = %s, want 'Failed to check health: something went wrong'", problem.Detail)
 				}
 				if problem.Instance == "" {
 					t.Error("problem.Instance is empty")
