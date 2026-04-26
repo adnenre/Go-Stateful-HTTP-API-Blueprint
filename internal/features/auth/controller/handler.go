@@ -62,15 +62,15 @@ func (c *AuthController) Login(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(resp)
 }
 
-// VerifyOTP validates OTP and activates account, returns JWT.
-func (c *AuthController) VerifyOTP(w http.ResponseWriter, r *http.Request) {
+// VerifyOtp validates OTP and activates account, returns JWT.
+func (c *AuthController) VerifyOtp(w http.ResponseWriter, r *http.Request) {
 	var req dto.VerifyOTPRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		errDomain := errors.BadRequestError("Invalid request body: " + err.Error())
 		errors.WriteProblem(w, r, errDomain, middleware.GetRequestID(r))
 		return
 	}
-	token, err := c.svc.VerifyOTP(r.Context(), req.Email, req.OTP)
+	token, err := c.svc.VerifyOtp(r.Context(), req.Email, req.OTP)
 	if err != nil {
 		if domainErr, ok := err.(*errors.DomainError); ok {
 			errors.WriteProblem(w, r, domainErr, middleware.GetRequestID(r))
