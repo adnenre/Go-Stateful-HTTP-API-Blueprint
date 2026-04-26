@@ -58,3 +58,11 @@ func (r *gormRepository) EmailExists(ctx context.Context, email string) (bool, e
 	err := r.db.WithContext(ctx).Model(&model.User{}).Where("email = ?", email).Count(&count).Error
 	return count > 0, err
 }
+
+func (r *gormRepository) UpdateUserStatus(ctx context.Context, id, status string) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Update("status", status).Error
+}
+
+func (r *gormRepository) UpdateUserPassword(ctx context.Context, id, hashedPassword string) error {
+	return r.db.WithContext(ctx).Model(&model.User{}).Where("id = ?", id).Update("password", hashedPassword).Error
+}
