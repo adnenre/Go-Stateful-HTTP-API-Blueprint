@@ -1,10 +1,6 @@
 ### REST API Blueprint - Integration Tests
 ### Base URL for the API
 @baseUrl = http://localhost:8080/api/v1
-### Variable to store JWT token after login
-@authToken = {{login.response.body.$.token}}
-### Variable to store admin JWT token (adjust after admin login)
-@adminToken = {{adminLogin.response.body.$.token}}
 
 ### ----------------------------------------
 ### 1. Health Check (public)
@@ -13,53 +9,58 @@ GET {{baseUrl}}/health
 Content-Type: application/json
 
 ### ----------------------------------------
-### 2. User Registration
+### 2. User Registration (returns 202, OTP sent to email)
 ### ----------------------------------------
 # @name register
 POST {{baseUrl}}/auth/register
 Content-Type: application/json
 
 {
-    "email": "testuser@example.com",
-    "password": "test123",
-    "username": "testuser"
-    
+    "email": "test-otp1@example.com",
+    "password": "Test123",
+    "username": "otpuser1"
 }
 
+### The OTP will appear in the Docker logs (mock email). Copy the 6‑digit OTP.
+### Replace <OTP> in the next request with the actual value.
+
 ### ----------------------------------------
-### 2. admin Registration
+### 3. OTP Verification (activates account and returns JWT)
 ### ----------------------------------------
-# @name register
-POST {{baseUrl}}/auth/register
+# @name verifyOtp
+POST {{baseUrl}}/auth/otp/verify
 Content-Type: application/json
 
 {
-    "email": "admin@example.com",
-    "password": "admin123",
-    "username": "admin"
-    
+    "email": "test-otp1@example.com",
+    "otp": "139408"   // <-- replace with actual OTP from logs
 }
-// docker exec -it rest_api_postgres psql -U postgres -d rest_api_blueprint -c "UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';"
+
+### The response contains a JWT token. Copy it to @authToken manually.
+@authToken = {{verifyOtp.response.body.$.token}}
+
 ### ----------------------------------------
-### 3. User Login (obtain JWT)
+### 4. Login (should now succeed)
 ### ----------------------------------------
 # @name login
 POST {{baseUrl}}/auth/login
 Content-Type: application/json
 
 {
-    "email": "testuser@example.com",
-    "password": "test123"
+    "email": "test-otp1@example.com",
+    "password": "Test123"
 }
 
+### Alternatively, use the token from OTP verification directly.
+
 ### ----------------------------------------
-### 4. Get Current User Profile (Protected)
+### 5. Get Current User Profile (Protected)
 ### ----------------------------------------
 GET {{baseUrl}}/users/me
 Authorization: Bearer {{authToken}}
 
 ### ----------------------------------------
-### 5. Update User Preferences (Protected)
+### 6. Update User Preferences (Protected)
 ### ----------------------------------------
 PATCH {{baseUrl}}/users/me/preferences
 Authorization: Bearer {{authToken}}
@@ -70,10 +71,43 @@ Content-Type: application/json
     "language": "fr"
 }
 
+### ========================================
+### ADMIN USER FLOW (also requires OTP)
+### ========================================
+
+### 7. Admin Registration (returns 202, OTP sent to email)
 ### ----------------------------------------
-### 6. Admin Login (Assuming admin user exists)
-###    Create an admin user manually (e.g., via DB) or promote a user.
-###    For testing, we assume an admin with email admin@example.com and password admin123.
+# @name adminRegister
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+    "email": "admin@example.com",
+    "password": "admin123",
+    "username": "admin"
+}
+
+### The OTP for admin will appear in the Docker logs. Copy it.
+
+### 8. OTP Verification for Admin
+### ----------------------------------------
+# @name adminVerifyOtp
+POST {{baseUrl}}/auth/otp/verify
+Content-Type: application/json
+
+{
+    "email": "admin@example.com",
+    "otp": "201196"   
+}
+
+### The response gives a JWT token for the admin (still as role "user" initially).
+### You still need to promote the user to admin in the database.
+
+### 9. Promote admin user in database (run this command after OTP verification)
+### docker exec -it rest_api_postgres psql -U postgres -d rest_api_blueprint -c "UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';"
+
+### ----------------------------------------
+### 10. Admin Login (after OTP verification and promotion)
 ### ----------------------------------------
 # @name adminLogin
 POST {{baseUrl}}/auth/login
@@ -84,14 +118,16 @@ Content-Type: application/json
     "password": "admin123"
 }
 
+@adminToken = {{adminLogin.response.body.$.token}}
+
 ### ----------------------------------------
-### 7. Admin: List all users (Admin only)
+### 11. Admin: List all users
 ### ----------------------------------------
 GET {{baseUrl}}/admin/users?limit=10&offset=0
 Authorization: Bearer {{adminToken}}
 
 ### ----------------------------------------
-### 8. Admin: Create a new user (Admin only)
+### 12. Admin: Create a new user
 ### ----------------------------------------
 # @name adminCreateUser
 POST {{baseUrl}}/admin/users
@@ -106,17 +142,16 @@ Content-Type: application/json
     "avatar": null
 }
 
-### Save the created user ID for later use
 @newUserId = {{adminCreateUser.response.body.$.id}}
 
 ### ----------------------------------------
-### 9. Admin: Get user by ID (Admin only)
+### 13. Admin: Get user by ID
 ### ----------------------------------------
 GET {{baseUrl}}/admin/users/{{newUserId}}
 Authorization: Bearer {{adminToken}}
 
 ### ----------------------------------------
-### 10. Admin: Update user (Admin only)
+### 14. Admin: Update user
 ### ----------------------------------------
 PUT {{baseUrl}}/admin/users/{{newUserId}}
 Authorization: Bearer {{adminToken}}
@@ -128,13 +163,45 @@ Content-Type: application/json
 }
 
 ### ----------------------------------------
-### 11. Admin: Delete user (Admin only)
+### 15. Admin: Delete user
 ### ----------------------------------------
 DELETE {{baseUrl}}/admin/users/{{newUserId}}
 Authorization: Bearer {{adminToken}}
 
 ### ----------------------------------------
-### 12. Verify deletion (should return 404)
+### 16. Verify deletion (should return 404)
 ### ----------------------------------------
 GET {{baseUrl}}/admin/users/{{newUserId}}
 Authorization: Bearer {{adminToken}}
+
+### ========================================
+### PASSWORD RESET FLOW
+### ========================================
+
+### 17. Request password reset (returns 202, token sent to email)
+POST {{baseUrl}}/auth/password-reset/request
+Content-Type: application/json
+
+{
+    "email": "test-otp1@example.com"
+}
+
+### The reset token will appear in the Docker logs (mock email). Copy the token.
+
+### 18. Confirm password reset with the token
+POST {{baseUrl}}/auth/password-reset/confirm
+Content-Type: application/json
+
+{
+    "token": "<RESET_TOKEN>",
+    "new_password": "NewPass5678"
+}
+
+### 19. Login with new password
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+    "email": "test-otp1@example.com",
+    "password": "NewPass5678"
+}
