@@ -21,6 +21,7 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 - **Request correlation** – `X-Request-Id` header automatically generated, stored in context, and logged.
 - **CORS & security headers** – Configurable CORS, plus `X-Content-Type-Options`, `X-Frame-Options`, HSTS, CSP, etc.
 - **RFC 7807 error handling** – Standardised `application/problem+json` error responses.
+- **Global request validation** – Automatic DTO validation with field‑specific RFC 7807 errors.
 - **Structured JSON logging** – `log/slog` with request ID, method, path, status, latency.
 - **Docker Compose** – Full stack (PostgreSQL, Redis, Go app) with hot reload (`air`).
 - **GitHub Actions CI/CD** – Tests with service containers, builds and pushes Docker image on tags.
@@ -72,12 +73,21 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 - [x] **Security headers middleware** – adds `X-Content-Type-Options`, `X-Frame-Options`, `X-XSS-Protection`, `Strict-Transport-Security` (configurable HSTS max‑age), `Referrer-Policy`, `Content-Security-Policy`, cache control.
 - [x] Middleware order: `SecurityHeaders → CORS → RequestID → JWTAuth → Logging → RateLimiter`.
 
-### 6. Observability & Correlation
+### 6. Request Validation & Error Documentation
+
+- [x] **Global validation middleware** – uses per‑feature resolvers to validate request bodies, restores body, returns `422` with field‑specific errors.
+- [x] **RFC 7807 absolute error types** – error `type` URIs point to static HTML documentation pages (e.g., `/errors/validation.html`).
+- [x] **Swagger UI** – interactive API documentation served at `/docs/`, consuming `/openapi.yaml`.
+- [x] **Static error pages** – human‑readable explanations for each error type served under `/errors/`.
+- [x] **Panic recovery middleware** – catches panics and returns `InternalError` with a proper type.
+- [x] Public documentation paths (`/docs/`, `/errors/`, `/openapi.yaml`, `/favicon.ico`) exempt from JWT and rate limiting.
+
+### 7. Observability & Correlation
 
 - [x] All logs are JSON (including request logs).
 - [x] Request ID correlates logs across a single request.
 
-### 7. Development Experience
+### 8. Development Experience
 
 - [x] OpenAPI contract (`api/openapi.yaml`) as source of truth.
 - [x] Code generation (`oapi-codegen`) for server stubs.
@@ -110,14 +120,14 @@ curl http://localhost:8080/api/v1/health
 
 Example response:
 
-```bash
+```
 {
   "status": "success",
   "data": {
     "status": "healthy",
     "timestamp": "2026-04-24T10:00:00Z",
     "uptime": "1m2s",
-    "version": "2.0.0",
+    "version": "3.0.0",
     "checks": {
       "database": "ok",
       "redis": "ok"
@@ -126,7 +136,15 @@ Example response:
 }
 ```
 
-> The Docker image is built and pushed automatically on every tag push (e.g., `v2.0.0`). The `:main` tag is updated on pushes to the `main` branch.
+> The Docker image is built and pushed automatically on every tag push (e.g., `v3.0.0`). The `:main` tag is updated on pushes to the `main` branch.
+
+### Interactive API Documentation
+
+Open `http://localhost:8080/docs/` in your browser to explore the API using Swagger UI. The OpenAPI specification is available at `http://localhost:8080/openapi.yaml`.
+
+### Error Documentation
+
+Every RFC 7807 error response contains a `type` URI (e.g., `/errors/validation.html`). These URIs resolve to human‑readable HTML pages explaining the error. You can also browse them at `http://localhost:8080/errors/`.
 
 ### 🔐 Creating an Admin User
 
@@ -147,7 +165,7 @@ Now you can log in as `admin@example.com` and obtain an admin token to call the 
 
 ## 📁 Project Structure
 
-```bash
+```
 rest-api-blueprint/
 ├── api/
 │   └── openapi.yaml                    # API contract (source of truth)
@@ -160,7 +178,7 @@ rest-api-blueprint/
 │   ├── cache/                          # Redis client
 │   ├── auth/                           # JWT utility (shared)
 │   ├── errors/                         # RFC 7807 error handling (domain errors, problem details)
-│   ├── middleware/                     # Security, CORS, RequestID, JWTAuth, Logging, RateLimiter
+│   ├── middleware/                     # Security, CORS, RequestID, JWTAuth, Logging, RateLimiter, Validation, PanicRecovery
 │   └── features/                       # Vertical slices
 │       ├── health/                     # Health endpoint (implemented)
 │       ├── auth/                       # User registration, login (implemented)
@@ -168,6 +186,7 @@ rest-api-blueprint/
 │       └── admin/                      # Admin CRUD on users (implemented)
 ├── .github/
 │   └── workflows/                      # CI/CD pipelines (ci.yml, cd.yml)
+├── web/                                # Embedded static files (Swagger UI, error pages)
 ├── docker-compose.yml                  # PostgreSQL, Redis, and Go app with hot reload
 ├── .env.example                        # Template for environment variables
 ├── main.go                             # Wires all features, starts server with middleware
@@ -206,7 +225,7 @@ curl http://localhost:8080/api/v1/health
 
 Response:
 
-```json
+```
 {
   "data": {
     "checks": {
@@ -216,13 +235,13 @@ Response:
     "status": "healthy",
     "timestamp": "2026-04-24T15:26:41.782319008Z",
     "uptime": "26m28s",
-    "version": "2.0.0"
+    "version": "3.0.0"
   },
   "status": "success"
 }
 ```
 
-Swagger UI is available at [http://localhost:8080/swagger/](http://localhost:8080/swagger/).
+Swagger UI is available at [http://localhost:8080/docs/](http://localhost:8080/docs/).
 
 ### Test Authentication & User Endpoints
 
@@ -241,6 +260,16 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 TOKEN="your.jwt.token"
 curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/users/me
 ```
+
+### Test Validation Error (missing username)
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"test@example.com","password":"strongpass"}'
+```
+
+Expected response: `422 Unprocessable Entity` with field‑specific error for `username`.
 
 ## 🧱 Adding a New Feature (example: `products`)
 
@@ -501,6 +530,10 @@ The blueprint is **production‑ready** as a foundation and **microservice‑rea
 - ✅ CORS middleware (configurable via env)
 - ✅ Security headers middleware (XSS, clickjacking, HSTS, CSP, cache control)
 - ✅ RFC 7807 error handling (`application/problem+json`)
+- ✅ **Global request validation middleware** (DTO validation, field‑specific errors)
+- ✅ **Absolute error documentation URIs** (point to static HTML pages)
+- ✅ **Swagger UI** (`/docs/`) and static error pages (`/errors/`)
+- ✅ **Panic recovery middleware** (returns structured internal error)
 - ✅ Docker Compose stack (PostgreSQL, Redis, Go app with hot reload)
 - ✅ GitHub Actions CI (tests with PostgreSQL/Redis service containers)
 - ✅ GitHub Actions CD (builds and pushes Docker image on tags)
