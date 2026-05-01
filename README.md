@@ -1,4 +1,4 @@
-# Go Stateful HTTP API Blueprint v3.2.0
+# Go Stateful HTTP API Blueprint v4.0.0
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/adnenrebai/rest-api-blueprint)](https://hub.docker.com/r/adnenrebai/rest-api-blueprint)
 [![CI](https://github.com/adnenre/Go-REST-API-Blueprint/actions/workflows/ci.yml/badge.svg)](https://github.com/adnenre/Go-REST-API-Blueprint/actions/workflows/ci.yml)
@@ -285,8 +285,8 @@ go-stateful-http-api/
 ### Clone and Initialise
 
 ```bash
-git clone <your-repo> go-stateful-http-api
-cd go-stateful-http-api
+git clone https://github.com/adnenre/Go-Stateful-HTTP-API-Blueprint
+cd Go-Stateful-HTTP-API-Blueprint
 make install-tools   # installs oapi-codegen
 ```
 
