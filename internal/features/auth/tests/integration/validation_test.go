@@ -62,11 +62,15 @@ func TestValidationIntegration_Register(t *testing.T) {
 	// Email sender (mock)
 	emailSender := &email.MockSender{}
 
-	// Create auth service and controller (inject Redis and email)
+	// Create auth service and controller
 	authRepo := repository.NewRepository(gormDB)
-	cfg := &config.Config{JWTSecret: "test", JWTExpiry: 15 * time.Minute}
+	cfg := &config.Config{
+		JWTSecret:          "test",
+		JWTExpiry:          15 * time.Minute,
+		RefreshTokenExpiry: 168 * time.Hour, // 7 days – required by controller
+	}
 	authSvc := service.NewService(authRepo, cfg, redisClient, emailSender)
-	authCtrl := controller.NewAuthController(authSvc)
+	authCtrl := controller.NewAuthController(authSvc, cfg) // ← pass config
 
 	// Prepare request with missing username (invalid)
 	invalidBody := dto.RegisterRequest{

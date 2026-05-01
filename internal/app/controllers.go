@@ -43,7 +43,8 @@ func BuildControllers(cfg *config.Config, emailSender email.Sender) *CombinedSer
 	// ============================================================
 	authRepo := authRepository.NewRepository(database.DB)
 	authSvc := authService.NewService(authRepo, cfg, cache.Client, emailSender)
-	authCtrl := authController.NewAuthController(authSvc)
+	// FIX: Pass cfg as second argument (required for cookie and refresh token support)
+	authCtrl := authController.NewAuthController(authSvc, cfg)
 
 	// ============================================================
 	// USER FEATURE

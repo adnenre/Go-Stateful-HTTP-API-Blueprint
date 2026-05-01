@@ -124,11 +124,12 @@ func TestAdminIntegration(t *testing.T) {
 	}
 
 	// Login as admin to obtain token and claims
-	token, err := authSvc.Login(context.Background(), "admin@example.com", "adminpass")
+	loginResp, err := authSvc.Login(context.Background(), "admin@example.com", "adminpass")
 	if err != nil {
 		t.Fatalf("admin login failed: %v", err)
 	}
-	claims, err := auth.ValidateToken(token, cfg.JWTSecret)
+	tokenStr := loginResp.AccessToken
+	claims, err := auth.ValidateToken(tokenStr, cfg.JWTSecret)
 	if err != nil {
 		t.Fatalf("failed to validate admin token: %v", err)
 	}

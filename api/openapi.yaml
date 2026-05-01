@@ -110,6 +110,8 @@ paths:
   /auth/login:
     post:
       summary: Login and obtain JWT
+      description: |
+        For web browsers, tokens are set as httpOnly cookies. For mobile apps, tokens are also returned in the JSON response body.
       operationId: login
       tags:
         - Auth
@@ -127,20 +129,19 @@ paths:
                   type: string
       responses:
         "200":
-          description: Login successful
+          description: Login successful – access_token and refresh_token returned in JSON (for mobile) and also set as httpOnly cookies (for web).
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  token:
-                    type: string
+                $ref: "#/components/schemas/LoginResponse"
         "401":
           description: Invalid credentials or account not activated
 
-  /auth/otp/verify:
+  /auth/verify-otp:
     post:
       summary: Verify OTP and activate account
+      description: |
+        For web browsers, tokens are set as httpOnly cookies. For mobile apps, tokens are also returned in the JSON response body.
       operationId: verifyOtp
       tags:
         - Auth
@@ -160,16 +161,75 @@ paths:
                   maxLength: 6
       responses:
         "200":
-          description: Account activated, returns JWT
+          description: Account activated – access_token and refresh_token returned in JSON and also set as httpOnly cookies.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LoginResponse"
+        "401":
+          description: Invalid or expired OTP
+
+  /auth/refresh:
+    post:
+      summary: Refresh access token
+      description: |
+        For web browsers, uses the httpOnly refresh token cookie. For mobile apps, expects refresh_token in the request body (JSON).
+        Returns new tokens in JSON body and also sets new httpOnly cookies (for web).
+      operationId: refreshToken
+      tags:
+        - Auth
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                refresh_token:
+                  type: string
+                  description: Required for mobile apps; for web, the cookie is used.
+      responses:
+        "200":
+          description: New access token and refresh token issued.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RefreshResponse"
+        "401":
+          description: Missing or invalid refresh token
+
+  /auth/logout:
+    post:
+      summary: Logout – clear access and refresh token cookies (or revoke tokens)
+      operationId: logout
+      tags:
+        - Auth
+      responses:
+        "204":
+          description: Successfully logged out (cookies cleared)
+        "401":
+          description: Unauthorized
+
+  /auth/session:
+    get:
+      summary: Get current session user
+      operationId: getSession
+      tags:
+        - Auth
+      security:
+        - CookieAuth: []
+      responses:
+        "200":
+          description: Current user session
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  token:
-                    type: string
+                  user:
+                    $ref: "#/components/schemas/UserProfile"
         "401":
-          description: Invalid or expired OTP
+          description: Unauthorized (missing or invalid token)
 
   /auth/password-reset/request:
     post:
@@ -226,7 +286,7 @@ paths:
       tags:
         - Users
       security:
-        - BearerAuth: []
+        - CookieAuth: []
       responses:
         "200":
           description: User profile
@@ -244,7 +304,7 @@ paths:
       tags:
         - Users
       security:
-        - BearerAuth: []
+        - CookieAuth: []
       requestBody:
         required: true
         content:
@@ -274,7 +334,7 @@ paths:
       tags:
         - Admin
       security:
-        - BearerAuth: []
+        - CookieAuth: []
       parameters:
         - name: limit
           in: query
@@ -306,7 +366,7 @@ paths:
       tags:
         - Admin
       security:
-        - BearerAuth: []
+        - CookieAuth: []
       requestBody:
         required: true
         content:
@@ -343,7 +403,7 @@ paths:
       tags:
         - Admin
       security:
-        - BearerAuth: []
+        - CookieAuth: []
       parameters:
         - name: id
           in: path
@@ -370,7 +430,7 @@ paths:
       tags:
         - Admin
       security:
-        - BearerAuth: []
+        - CookieAuth: []
       parameters:
         - name: id
           in: path
@@ -413,7 +473,7 @@ paths:
       tags:
         - Admin
       security:
-        - BearerAuth: []
+        - CookieAuth: []
       parameters:
         - name: id
           in: path
@@ -436,6 +496,12 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+      description: Use this for mobile apps or direct API access. For web browsers, prefer CookieAuth.
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: access_token
+      description: httpOnly cookie containing the JWT access token
 
   schemas:
     HealthResponse:
@@ -480,6 +546,45 @@ components:
                 database: "ok"
                 redis: "ok"
 
+    LoginResponse:
+      type: object
+      required:
+        - access_token
+        - refresh_token
+        - expires_in
+        - token_type
+        - user
+      properties:
+        access_token:
+          type: string
+          description: JWT access token (for mobile apps)
+        refresh_token:
+          type: string
+          description: Refresh token (for mobile apps)
+        expires_in:
+          type: integer
+          description: Access token validity in seconds
+          example: 3600
+        token_type:
+          type: string
+          example: Bearer
+        user:
+          $ref: "#/components/schemas/UserProfile"
+
+    RefreshResponse:
+      type: object
+      required:
+        - access_token
+        - refresh_token
+        - expires_in
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        expires_in:
+          type: integer
+
     UserProfile:
       type: object
       required:
@@ -495,6 +600,16 @@ components:
           description: Unique username
         email:
           type: string
+        firstName:
+          type: string
+          description: User's first name (optional)
+        lastName:
+          type: string
+          description: User's last name (optional)
+        emailVerified:
+          type: boolean
+          description: Whether the email address has been verified
+          default: false
         avatar:
           type: string
           description: URL to profile picture (optional)

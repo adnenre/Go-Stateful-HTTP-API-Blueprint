@@ -12,54 +12,52 @@ import (
 )
 
 // Config holds all application configuration values.
-// All sensitive values are required (no defaults) and are loaded from environment variables.
 type Config struct {
 	// Server
-	ServerPort string // HTTP listen port (default 8080)
+	ServerPort string
 
 	// Database
-	DatabaseURL string // PostgreSQL connection string (required)
+	DatabaseURL string
 
 	// Cache
-	RedisURL string // Redis connection URL (required)
+	RedisURL string
 
 	// JWT authentication
-	JWTSecret string        // Secret key for signing JWTs (required)
-	JWTExpiry time.Duration // Token expiration (required)
+	JWTSecret string
+	JWTExpiry time.Duration
+
+	// Refresh token
+	RefreshTokenExpiry time.Duration
 
 	// Rate limiting
-	RateLimitPerSecond int // Requests allowed per second per client (required)
+	RateLimitPerSecond int
 
-	// CORS (Cross-Origin Resource Sharing)
-	CORSAllowedOrigins   []string // Allowed origins (e.g., "http://localhost:3000")
-	CORSAllowedMethods   []string // Allowed HTTP methods (e.g., "GET,POST")
-	CORSAllowedHeaders   []string // Allowed request headers (e.g., "Content-Type,Authorization")
-	CORSAllowCredentials bool     // Whether to allow credentials (cookies, auth headers)
+	// CORS
+	CORSAllowedOrigins   []string
+	CORSAllowedMethods   []string
+	CORSAllowedHeaders   []string
+	CORSAllowCredentials bool
 
-	// HSTS (HTTP Strict Transport Security)
-	HSTSMaxAge int // max-age in seconds (default 31536000)
+	// HSTS
+	HSTSMaxAge int
 
-	// Error documentation base URL (optional)
-	ErrorDocsBaseURL string // e.g., "http://localhost:8080" or "https://api.example.com"
+	// Error documentation base URL
+	ErrorDocsBaseURL string
 
-	// Email SMTP (optional – used for sending OTP and password reset emails)
-	SMTPHost     string // SMTP server host (e.g., smtp.gmail.com)
-	SMTPPort     int    // SMTP port (default 587)
-	SMTPUser     string // SMTP auth username
-	SMTPPassword string // SMTP auth password
-	SMTPFrom     string // From email address
+	// Email SMTP
+	SMTPHost     string
+	SMTPPort     int
+	SMTPUser     string
+	SMTPPassword string
+	SMTPFrom     string
 
-	// Public paths (exact) that bypass JWT authentication (optional)
-	PublicPaths []string
-
-	// Public prefixes that bypass JWT authentication (optional)
+	// Public paths
+	PublicPaths    []string
 	PublicPrefixes []string
 }
 
 // Load reads configuration from environment variables and .env file.
-// It fails fast (logs and exits) if any required variable is missing.
 func Load() *Config {
-	// Load .env file for local development (ignored if not found, which is fine for production)
 	_ = godotenv.Load()
 
 	serverPort := getEnv("SERVER_PORT", "8080")
@@ -83,32 +81,37 @@ func Load() *Config {
 		slog.Error("configuration error", "error", err)
 		os.Exit(1)
 	}
+	refreshExpiry, err := getEnvDurationRequired("REFRESH_TOKEN_EXPIRY")
+	if err != nil {
+		slog.Error("configuration error", "error", err)
+		os.Exit(1)
+	}
 	rateLimit, err := getEnvIntRequired("RATE_LIMIT_PER_SEC")
 	if err != nil {
 		slog.Error("configuration error", "error", err)
 		os.Exit(1)
 	}
 
-	// CORS settings: defaults are permissive for local development.
+	// CORS settings
 	corsOrigins := getEnv("CORS_ALLOWED_ORIGINS", "*")
 	corsMethods := getEnv("CORS_ALLOWED_METHODS", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
 	corsHeaders := getEnv("CORS_ALLOWED_HEADERS", "Content-Type, Authorization, X-Request-ID")
 	corsCredentials := getEnvBool("CORS_ALLOW_CREDENTIALS", false)
 
-	// HSTS max-age (default 1 year = 31536000 seconds)
+	// HSTS max-age
 	hstsMaxAge := getEnvInt("HSTS_MAX_AGE", 31536000)
 
-	// Error documentation base URL (optional)
+	// Error documentation base URL
 	errorDocsBaseURL := getEnv("ERROR_DOCS_BASE_URL", "")
 
-	// Email SMTP (optional)
+	// Email SMTP
 	smtpHost := getEnv("SMTP_HOST", "")
 	smtpPort := getEnvInt("SMTP_PORT", 587)
 	smtpUser := getEnv("SMTP_USER", "")
 	smtpPassword := getEnv("SMTP_PASSWORD", "")
 	smtpFrom := getEnv("SMTP_FROM", "")
 
-	// Public paths (exact) – no defaults; must be set via env if needed
+	// Public paths
 	publicPathsStr := getEnv("PUBLIC_PATHS", "")
 	var publicPaths []string
 	if publicPathsStr != "" {
@@ -118,7 +121,7 @@ func Load() *Config {
 		}
 	}
 
-	// Public prefixes – no defaults; must be set via env if needed
+	// Public prefixes
 	publicPrefixesStr := getEnv("PUBLIC_PREFIXES", "")
 	var publicPrefixes []string
 	if publicPrefixesStr != "" {
@@ -134,6 +137,7 @@ func Load() *Config {
 		RedisURL:             redisURL,
 		JWTSecret:            jwtSecret,
 		JWTExpiry:            jwtExpiry,
+		RefreshTokenExpiry:   refreshExpiry,
 		RateLimitPerSecond:   rateLimit,
 		CORSAllowedOrigins:   strings.Split(corsOrigins, ","),
 		CORSAllowedMethods:   strings.Split(corsMethods, ","),
@@ -151,7 +155,7 @@ func Load() *Config {
 	}
 }
 
-// getEnv returns value or default if not set.
+// Helper functions unchanged
 func getEnv(key, defaultVal string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
@@ -159,7 +163,6 @@ func getEnv(key, defaultVal string) string {
 	return defaultVal
 }
 
-// getEnvInt returns integer value or default if not set or invalid.
 func getEnvInt(key string, defaultVal int) int {
 	if val := os.Getenv(key); val != "" {
 		if i, err := strconv.Atoi(val); err == nil {
@@ -169,7 +172,6 @@ func getEnvInt(key string, defaultVal int) int {
 	return defaultVal
 }
 
-// getEnvRequired returns error if the env var is empty.
 func getEnvRequired(key string) (string, error) {
 	val := os.Getenv(key)
 	if val == "" {
@@ -178,7 +180,6 @@ func getEnvRequired(key string) (string, error) {
 	return val, nil
 }
 
-// getEnvDurationRequired parses a duration from env; error if empty or invalid.
 func getEnvDurationRequired(key string) (time.Duration, error) {
 	val := os.Getenv(key)
 	if val == "" {
@@ -191,7 +192,6 @@ func getEnvDurationRequired(key string) (time.Duration, error) {
 	return d, nil
 }
 
-// getEnvIntRequired parses an integer from env; error if empty or invalid.
 func getEnvIntRequired(key string) (int, error) {
 	val := os.Getenv(key)
 	if val == "" {
@@ -204,7 +204,6 @@ func getEnvIntRequired(key string) (int, error) {
 	return i, nil
 }
 
-// getEnvBool parses a boolean from env; defaults to defaultVal if not set or invalid.
 func getEnvBool(key string, defaultVal bool) bool {
 	if val := os.Getenv(key); val != "" {
 		b, err := strconv.ParseBool(val)

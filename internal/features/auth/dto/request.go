@@ -25,3 +25,9 @@ type PasswordResetConfirm struct {
 	Token       string `json:"token" validate:"required"`
 	NewPassword string `json:"new_password" validate:"required,min=8"`
 }
+
+// RefreshRequest is optional; we can read refresh token from cookie.
+// But we include it for flexibility.
+type RefreshRequest struct {
+	RefreshToken string `json:"refresh_token" validate:"required"`
+}

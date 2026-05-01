@@ -110,11 +110,12 @@ func TestUserIntegration(t *testing.T) {
 	}
 
 	// Verify OTP to activate user and get JWT
-	token, err := authSvc.VerifyOtp(context.Background(), "user-integration@example.com", otp)
+	otpResp, err := authSvc.VerifyOtp(context.Background(), "user-integration@example.com", otp)
 	if err != nil {
 		t.Fatalf("failed to verify OTP: %v", err)
 	}
-	claims, err := auth.ValidateToken(token, cfg.JWTSecret)
+	tokenStr := otpResp.AccessToken
+	claims, err := auth.ValidateToken(tokenStr, cfg.JWTSecret)
 	if err != nil {
 		t.Fatalf("failed to validate token: %v", err)
 	}

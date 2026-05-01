@@ -28,6 +28,16 @@ import (
 	"rest-api-blueprint/internal/features/auth/service"
 )
 
+// Helper to get cookie value by name from response
+func getCookieValue(w *httptest.ResponseRecorder, name string) string {
+	for _, c := range w.Result().Cookies() {
+		if c.Name == name {
+			return c.Value
+		}
+	}
+	return ""
+}
+
 func TestAuthIntegration(t *testing.T) {
 	// ============================================================
 	// ARRANGE
@@ -60,7 +70,7 @@ func TestAuthIntegration(t *testing.T) {
 	sqlDB, _ := gormDB.DB()
 	defer sqlDB.Close()
 
-	// Migrate users table (test-local, does not exit)
+	// Migrate users table
 	if err := gormDB.AutoMigrate(&authModel.User{}); err != nil {
 		t.Skipf("failed to migrate: %v", err)
 	}
@@ -81,18 +91,18 @@ func TestAuthIntegration(t *testing.T) {
 	}
 	defer redisClient.Close()
 
-	// Config for JWT
+	// Config for JWT and refresh token
 	cfg := &config.Config{
-		JWTSecret: "test-secret",
-		JWTExpiry: 15 * time.Minute,
+		JWTSecret:          "test-secret",
+		JWTExpiry:          15 * time.Minute,
+		RefreshTokenExpiry: 168 * time.Hour, // 7 days
 	}
 
-	// Wire dependencies (use real service, no email mock? We'll use a mock email that logs, but we need OTP from Redis)
-	// Create a mock email sender that logs (we can use the existing MockSender)
-	emailSender := &email.MockSender{} // we need to import email package
+	// Wire dependencies
+	emailSender := &email.MockSender{}
 	repo := repository.NewRepository(gormDB)
 	svc := service.NewService(repo, cfg, redisClient, emailSender)
-	ctrl := controller.NewAuthController(svc)
+	ctrl := controller.NewAuthController(svc, cfg)
 
 	// ============================================================
 	// ACT & ASSERT – Register (should return 202 Accepted)
@@ -121,26 +131,40 @@ func TestAuthIntegration(t *testing.T) {
 	t.Logf("OTP for %s: %s", registerReq.Email, otp)
 
 	// ============================================================
-	// ACT & ASSERT – Verify OTP
+	// ACT & ASSERT – Verify OTP (should return 200 and set cookies)
 	// ============================================================
 	verifyReq := dto.VerifyOTPRequest{
 		Email: registerReq.Email,
 		OTP:   otp,
 	}
 	body, _ = json.Marshal(verifyReq)
-	httpReq = httptest.NewRequest("POST", "/api/v1/auth/otp/verify", bytes.NewReader(body))
+	httpReq = httptest.NewRequest("POST", "/api/v1/auth/verify-otp", bytes.NewReader(body))
 	httpReq.Header.Set("Content-Type", "application/json")
 	w = httptest.NewRecorder()
 	ctrl.VerifyOtp(w, httpReq)
 	if w.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d", w.Code)
 	}
-	var verifyResp dto.LoginResponse
+
+	// Decode JSON response (only metadata, no access_token)
+	var verifyResp dto.OTPResponse
 	if err := json.NewDecoder(w.Body).Decode(&verifyResp); err != nil {
 		t.Fatal(err)
 	}
-	if verifyResp.Token == "" {
-		t.Error("token empty after OTP verification")
+	if verifyResp.ExpiresIn <= 0 {
+		t.Error("expires_in not set in response")
+	}
+	if verifyResp.User.Email != registerReq.Email {
+		t.Errorf("expected user email %s, got %s", registerReq.Email, verifyResp.User.Email)
+	}
+	// Check that cookies are set
+	accessTokenCookie := getCookieValue(w, "access_token")
+	if accessTokenCookie == "" {
+		t.Error("access_token cookie not set")
+	}
+	refreshTokenCookie := getCookieValue(w, "refresh_token")
+	if refreshTokenCookie == "" {
+		t.Error("refresh_token cookie not set")
 	}
 
 	// ============================================================
@@ -162,9 +186,22 @@ func TestAuthIntegration(t *testing.T) {
 	if err := json.NewDecoder(w.Body).Decode(&loginResp); err != nil {
 		t.Fatal(err)
 	}
-	if loginResp.Token == "" {
-		t.Error("token empty")
+	if loginResp.ExpiresIn <= 0 {
+		t.Error("expires_in not set")
 	}
+	if loginResp.User.Email != registerReq.Email {
+		t.Errorf("expected user email %s, got %s", registerReq.Email, loginResp.User.Email)
+	}
+	// Check that new cookies are set (should be refreshed)
+	newAccessCookie := getCookieValue(w, "access_token")
+	if newAccessCookie == "" {
+		t.Error("access_token cookie not set after login")
+	}
+	newRefreshCookie := getCookieValue(w, "refresh_token")
+	if newRefreshCookie == "" {
+		t.Error("refresh_token cookie not set after login")
+	}
+	// They should be different from the previous ones? Not required to check but okay.
 
 	// ============================================================
 	// ACT & ASSERT – Duplicate registration (should return 409)

@@ -1,10 +1,12 @@
-# REST API Blueprint v3.1.1
+# Go Stateful HTTP API Blueprint v3.2.0
 
 [![Docker Pulls](https://img.shields.io/docker/pulls/adnenrebai/rest-api-blueprint)](https://hub.docker.com/r/adnenrebai/rest-api-blueprint)
 [![CI](https://github.com/adnenre/Go-REST-API-Blueprint/actions/workflows/ci.yml/badge.svg)](https://github.com/adnenre/Go-REST-API-Blueprint/actions/workflows/ci.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/adnenre/Go-REST-API-Blueprint)](https://goreportcard.com/report/github.com/adnenre/Go-REST-API-Blueprint)
 
-A reusable, contract‑first REST API template built with **pure Go (net/http)** and a **feature‑based layered architecture**.  
+> **⚠️ Terminology note:** This project is a **stateful HTTP API**, not a REST API anymore. It intentionally uses server‑side state (Redis) for refresh token rotation, rate limiting, OTP storage, and session endpoints – all of which violate the statelessness constraint of REST. If you need a truly RESTful API, you would have to remove these features.
+
+A reusable, **contract‑first Stateful HTTP API template** built with **pure Go (net/http)** and a **feature‑based layered architecture**.  
 Every feature follows the same pattern: `controller → service → repository → model → mapper → dto`.  
 The API contract (OpenAPI 3.0) is the single source of truth – all code is generated from it.
 
@@ -14,6 +16,9 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 - **No external web framework** – Only the standard library (`net/http`) and a code generator.
 - **Feature‑based layered architecture** – Each feature is isolated (controller, service, repository, model, mapper, dto, tests), making it easy to scale or split into microservices later.
 - **Enterprise‑ready health endpoint** – Real checks for PostgreSQL and Redis, returns `200`/`503` with detailed `checks` map.
+- **Dual‑mode authentication** – Supports both `httpOnly` cookies (secure web BFF) and `Authorization: Bearer` headers (mobile apps) from the same endpoints.
+- **Refresh token rotation** – One‑time use refresh tokens stored in Redis, automatically rotated on each refresh request.
+- **Session endpoint** – `GET /api/v1/auth/session` returns current user without needing a separate profile request.
 - **JWT authentication with OTP verification** – Register, login, email‑based OTP activation, and password reset flows.
 - **User profile & preferences** – `GET /users/me` and `PATCH /users/me/preferences`.
 - **Admin user management** – Full CRUD on users (`/admin/users`) with role‑based access (admin only).
@@ -28,6 +33,26 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 - **OpenAPI UI** – Swagger documentation embedded in the binary.
 - **Makefile** – Automates generation, scaffolding, running, testing, Docker management.
 - **Microservice‑ready** – Designed to be deployed as a monolith today and split into microservices tomorrow with minimal refactoring.
+
+## ❓ Why “Go Stateful HTTP API” and not “REST”?
+
+REST (Representational State Transfer) requires **statelessness** – the server must not store any client context between requests. This project deliberately stores:
+
+- Refresh tokens in Redis (with rotation state)
+- Rate limiting counters per IP in Redis
+- OTP codes and password reset tokens in Redis (with TTL)
+- Session information (via the `/session` endpoint)
+
+These features are **incompatible with REST**. The API is therefore a **stateful HTTP API**, sometimes called a “REST‑inspired” or “resource‑oriented HTTP API”. It remains a well‑structured, production‑ready design – just not RESTful.
+
+If you require full REST compliance, you would need to:
+
+- Remove refresh token rotation and use self‑contained JWTs only (no server‑side token storage)
+- Replace Redis rate limiting with a stateless algorithm (e.g., client‑driven)
+- Eliminate the session endpoint and store any session data in self‑contained tokens
+- Move OTP and reset tokens to self‑contained signed tokens
+
+For the vast majority of applications, the stateful approach is simpler, more secure, and perfectly acceptable. We choose honesty over marketing.
 
 ## ✅ Implemented Enterprise Features (Detailed)
 
@@ -54,11 +79,13 @@ The API contract (OpenAPI 3.0) is the single source of truth – all code is gen
 ### 4. Authentication & User Management
 
 - [x] **JWT utility** – generate/validate tokens (`internal/auth/jwt.go`).
-- [x] **JWT authentication middleware** – protects routes, skips public paths, injects claims into context.
+- [x] **Dual‑mode JWT middleware** – accepts token from `access_token` httpOnly cookie (for web) OR `Authorization: Bearer` header (for mobile).
 - [x] **User registration** – `POST /api/v1/auth/register` (email, username, password, optional avatar) – returns `202 Accepted`, stores user as `pending`.
-- [x] **OTP verification** – `POST /api/v1/auth/otp/verify` (6‑digit OTP stored in Redis, 10 min TTL) activates account and returns JWT.
-- [x] **User login** – `POST /api/v1/auth/login` returns JWT (only active accounts).
-- [x] **User profile** – `GET /api/v1/users/me` (protected).
+- [x] **OTP verification** – `POST /api/v1/auth/verify-otp` (6‑digit OTP stored in Redis, 10 min TTL) activates account and returns `access_token` + `refresh_token` (JSON body for mobile) and also sets `httpOnly` cookies (for web).
+- [x] **User login** – `POST /api/v1/auth/login` returns tokens in JSON body and sets `httpOnly` cookies.
+- [x] **Refresh token rotation** – `POST /api/v1/auth/refresh` accepts refresh token (cookie for web, JSON body for mobile), rotates token pair, stores new tokens in Redis, sets new cookies, returns JSON tokens.
+- [x] **Session endpoint** – `GET /api/v1/auth/session` returns current user profile using the access token (cookie or Bearer header).
+- [x] **User profile** – `GET /api/v1/users/me` (protected, returns `firstName`, `lastName`, `emailVerified` along with other fields).
 - [x] **User preferences** – `PATCH /api/v1/users/me/preferences` (stored in separate table).
 - [x] **Admin CRUD** – full user management under `/api/v1/admin/users` (list, create, get by ID, update, delete) – only accessible with `admin` role.
 - [x] **Password hashing** – bcrypt.
@@ -111,8 +138,8 @@ docker run -p 8080:8080 adnenrebai/rest-api-blueprint:main
 Or use a specific version:
 
 ```bash
-docker pull adnenrebai/rest-api-blueprint:v3.1.0
-docker run -p 8080:8080 adnenrebai/rest-api-blueprint:v3.1.0
+docker pull adnenrebai/rest-api-blueprint:v3.2.0
+docker run -p 8080:8080 adnenrebai/rest-api-blueprint:v3.2.0
 ```
 
 Then test the health endpoint:
@@ -128,7 +155,7 @@ Example response:
   "status": "success",
   "data": {
     "status": "healthy",
-    "timestamp": "2026-04-24T10:00:00Z",
+    "timestamp": "2026-04-30T10:00:00Z",
     "uptime": "1m2s",
     "version": "1.0.0",
     "checks": {
@@ -139,7 +166,7 @@ Example response:
 }
 ```
 
-> The Docker image is built and pushed automatically on every tag push (e.g., `v3.1.0`). The `:main` tag is updated on pushes to the `main` branch.
+> The Docker image is built and pushed automatically on every tag push (e.g., `v3.2.0`). The `:main` tag is updated on pushes to the `main` branch.
 
 ### Interactive API Documentation
 
@@ -154,12 +181,31 @@ Every RFC 7807 error response contains a `type` URI (e.g., `/errors/validation.h
 After registration, the user receives an OTP via email (mock sender logs to stdout). The account must be activated with:
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/auth/otp/verify \
+curl -X POST http://localhost:8080/api/v1/auth/verify-otp \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","otp":"123456"}'
 ```
 
 Only then the user can log in.
+
+### 🔄 Refresh Token Flow (Web vs Mobile)
+
+- **Web (BFF)**: The refresh token is stored in an `httpOnly` cookie. Call `POST /api/v1/auth/refresh` without body – the cookie is automatically sent.
+- **Mobile app**: Send the refresh token in the JSON body: `{ "refresh_token": "..." }`. The backend will return new tokens in the JSON body.
+
+Example for web (using cookie):
+
+```bash
+curl -X POST -b cookies.txt -c cookies.txt http://localhost:8080/api/v1/auth/refresh
+```
+
+Example for mobile (using JSON body):
+
+```bash
+curl -X POST http://localhost:8080/api/v1/auth/refresh \
+  -H "Content-Type: application/json" \
+  -d '{"refresh_token":"<token>"}'
+```
 
 ### 📧 Password Reset Flow
 
@@ -199,30 +245,30 @@ Now you can log in as `admin@example.com` and obtain an admin token to call the 
 ## 📁 Project Structure
 
 ```
-rest-api-blueprint/
+go-stateful-http-api/
 ├── api/
-│   └── openapi.yaml                    # API contract (source of truth)
+│   └── openapi.yaml      # API contract (source of truth)
 ├── internal/
-│   ├── gen/                            # Generated code (types, server interface)
+│   ├── gen/              # Generated code (types, server interface)
 │   │   └── api.gen.go
-│   ├── config/                         # Configuration loading (.env + env vars)
-│   ├── logger/                         # Structured JSON logging (slog)
-│   ├── database/                       # GORM connection & connection pool
-│   ├── cache/                          # Redis client
-│   ├── auth/                           # JWT utility (shared)
-│   ├── errors/                         # RFC 7807 error handling (domain errors, problem details)
-│   ├── middleware/                     # Security, CORS, RequestID, JWTAuth, Logging, RateLimiter, Validation, PanicRecovery
-│   └── features/                       # Vertical slices
-│       ├── health/                     # Health endpoint (implemented)
-│       ├── auth/                       # User registration, login, OTP, password reset (implemented)
-│       ├── user/                       # Profile & preferences (implemented)
-│       └── admin/                      # Admin CRUD on users (implemented)
+│   ├── config/           # Configuration loading (.env + env vars)
+│   ├── logger/           # Structured JSON logging (slog)
+│   ├── database/         # GORM connection & connection pool
+│   ├── cache/            # Redis client
+│   ├── auth/             # JWT utility (shared)
+│   ├── errors/           # RFC 7807 error handling (domain errors, problem details)
+│   ├── middleware/       # Security, CORS, RequestID, JWTAuth, Logging, RateLimiter, Validation, PanicRecovery
+│   └── features/         # Vertical slices
+│       ├── health/       # Health endpoint (implemented)
+│       ├── auth/         # User registration, login, OTP, password reset, refresh, session (implemented)
+│       ├── user/         # Profile & preferences (implemented)
+│       └── admin/        # Admin CRUD on users (implemented)
 ├── .github/
-│   └── workflows/                      # CI/CD pipelines (ci.yml, cd.yml)
-├── web/                                # Embedded static files (Swagger UI, error pages)
-├── docker-compose.yml                  # PostgreSQL, Redis, and Go app with hot reload
-├── .env.example                        # Template for environment variables
-├── main.go                             # Wires all features, starts server with middleware
+│   └── workflows/        # CI/CD pipelines (ci.yml, cd.yml)
+├── web/                  # Embedded static files (Swagger UI, error pages)
+├── docker-compose.yml    # PostgreSQL, Redis, and Go app with hot reload
+├── .env.example          # Template for environment variables
+├── main.go               # Wires all features, starts server with middleware
 ├── go.mod
 ├── Makefile
 └── README.md
@@ -239,8 +285,8 @@ rest-api-blueprint/
 ### Clone and Initialise
 
 ```bash
-git clone <your-repo> rest-api-blueprint
-cd rest-api-blueprint
+git clone <your-repo> go-stateful-http-api
+cd go-stateful-http-api
 make install-tools   # installs oapi-codegen
 ```
 
@@ -266,7 +312,7 @@ Response:
       "redis": "ok"
     },
     "status": "healthy",
-    "timestamp": "2026-04-24T15:26:41.782319008Z",
+    "timestamp": "2026-04-30T15:26:41.782319008Z",
     "uptime": "26m28s",
     "version": "1.0.0"
   },
@@ -285,8 +331,9 @@ curl -X POST http://localhost:8080/api/v1/auth/register \
   -d '{"email":"user@example.com","password":"pass123","username":"testuser"}'
 
 # Check logs for OTP (e.g., 654321)
-# Verify OTP to activate account and get JWT
-curl -X POST http://localhost:8080/api/v1/auth/otp/verify \
+
+# Verify OTP to activate account and get tokens
+curl -X POST http://localhost:8080/api/v1/auth/verify-otp \
   -H "Content-Type: application/json" \
   -d '{"email":"user@example.com","otp":"654321"}'
 
@@ -462,26 +509,26 @@ Example controller stub:
 package controller
 
 import (
-    "net/http"
-    "rest-api-blueprint/internal/features/products/service"
-    "rest-api-blueprint/internal/gen"
+	"net/http"
+	"go-stateful-http-api/internal/features/products/service"
+	"go-stateful-http-api/internal/gen"
 )
 
 type ProductsController struct {
-    svc service.Service
+	svc service.Service
 }
 
 func NewProductsController(svc service.Service) *ProductsController {
-    return &ProductsController{svc: svc}
+	return &ProductsController{svc: svc}
 }
 
 func (c *ProductsController) ListProducts(w http.ResponseWriter, r *http.Request) {
-    products, err := c.svc.List(r.Context())
-    if err != nil {
-        // use errors.WriteProblemSimple or domain error
-        return
-    }
-    // map and respond
+	products, err := c.svc.List(r.Context())
+	if err != nil {
+		// use errors.WriteProblemSimple or domain error
+		return
+	}
+	// map and respond
 }
 ```
 
@@ -538,7 +585,7 @@ make test
 
 ## 🏁 Current Status & Roadmap
 
-The **health, auth (with OTP and password reset), user, and admin features** are fully implemented and serve as working examples.  
+The **health, auth (with OTP, password reset, refresh token rotation, and session), user, and admin features** are fully implemented and serve as working examples.  
 The blueprint is **production‑ready** as a foundation and **microservice‑ready** – you can build new features (products, scores, leaderboard, etc.) using the same pattern.
 
 ### What’s already done
@@ -549,18 +596,21 @@ The blueprint is **production‑ready** as a foundation and **microservice‑rea
 - ✅ Code generation via `oapi-codegen`
 - ✅ Scaffolding for new features
 - ✅ Health endpoint (`/api/v1/health`) with unit and integration tests (real PostgreSQL + Redis pings, 200/503 with `checks` map)
-- ✅ **Authentication**: `POST /api/v1/auth/register` (returns 202, user pending), `POST /api/v1/auth/otp/verify` (activates account, returns JWT), `POST /api/v1/auth/login` (JWT, bcrypt)
-- ✅ **Password reset**: `POST /api/v1/auth/password-reset/request` and `POST /api/v1/auth/password-reset/confirm`
-- ✅ **User profile**: `GET /api/v1/users/me` (protected, returns user details)
-- ✅ **User preferences**: `PATCH /api/v1/users/me/preferences` (store/update preferences)
-- ✅ **Admin user management**: Full CRUD on `/api/v1/admin/users` (list, create, get by ID, update, delete) – only accessible with `admin` role
-- ✅ JWT authentication middleware (skips public paths, injects claims into context)
+- ✅ **Dual‑mode authentication** (cookies for web, Bearer for mobile)
+- ✅ **Refresh token rotation** with Redis storage
+- ✅ **Session endpoint** (`/api/v1/auth/session`)
+- ✅ **JWT authentication with OTP verification**: `POST /auth/register` (202, pending), `POST /auth/verify-otp` (activates, returns tokens), `POST /auth/login` (tokens)
+- ✅ **Password reset**: `POST /auth/password-reset/request` and `POST /auth/password-reset/confirm`
+- ✅ **User profile**: `GET /users/me` (protected, returns extended profile fields)
+- ✅ **User preferences**: `PATCH /users/me/preferences` (store/update preferences)
+- ✅ **Admin user management**: Full CRUD on `/admin/users` (list, create, get by ID, update, delete) – only accessible with `admin` role
+- ✅ JWT authentication middleware (skips public paths, injects claims into context; reads token from cookie or Bearer header)
 - ✅ Live reload (`air`) for development
 - ✅ Makefile for common tasks (including Docker Compose targets)
 - ✅ Structured configuration (`.env` + env vars, fail‑fast validation)
 - ✅ Structured JSON logging (`log/slog` with request ID)
 - ✅ PostgreSQL connection (GORM, connection pooling)
-- ✅ Redis client (used for rate limiting, health checks, OTP, reset tokens)
+- ✅ Redis client (used for rate limiting, health checks, OTP, reset tokens, refresh token storage)
 - ✅ Distributed rate limiting (Redis‑based, per IP, returns 429)
 - ✅ Request ID middleware (`X-Request-Id` header, context, logs)
 - ✅ CORS middleware (configurable via env)

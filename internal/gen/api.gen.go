@@ -16,7 +16,7 @@ import (
 )
 
 const (
-	BearerAuthScopes = "BearerAuth.Scopes"
+	CookieAuthScopes = "CookieAuth.Scopes"
 )
 
 // Defines values for HealthResponseDataStatus.
@@ -138,6 +138,27 @@ type HealthResponseDataStatus string
 // HealthResponseStatus Overall status of the API response envelope
 type HealthResponseStatus string
 
+// LoginResponse defines model for LoginResponse.
+type LoginResponse struct {
+	// AccessToken JWT access token (for mobile apps)
+	AccessToken string `json:"access_token"`
+
+	// ExpiresIn Access token validity in seconds
+	ExpiresIn int `json:"expires_in"`
+
+	// RefreshToken Refresh token (for mobile apps)
+	RefreshToken string      `json:"refresh_token"`
+	TokenType    string      `json:"token_type"`
+	User         UserProfile `json:"user"`
+}
+
+// RefreshResponse defines model for RefreshResponse.
+type RefreshResponse struct {
+	AccessToken  string `json:"access_token"`
+	ExpiresIn    int    `json:"expires_in"`
+	RefreshToken string `json:"refresh_token"`
+}
+
 // UserPreferences defines model for UserPreferences.
 type UserPreferences struct {
 	Language      *string `json:"language,omitempty"`
@@ -147,10 +168,19 @@ type UserPreferences struct {
 // UserProfile defines model for UserProfile.
 type UserProfile struct {
 	// Avatar URL to profile picture (optional)
-	Avatar    *string         `json:"avatar,omitempty"`
-	CreatedAt *time.Time      `json:"created_at,omitempty"`
-	Email     string          `json:"email"`
-	Id        string          `json:"id"`
+	Avatar    *string    `json:"avatar,omitempty"`
+	CreatedAt *time.Time `json:"created_at,omitempty"`
+	Email     string     `json:"email"`
+
+	// EmailVerified Whether the email address has been verified
+	EmailVerified *bool `json:"emailVerified,omitempty"`
+
+	// FirstName User's first name (optional)
+	FirstName *string `json:"firstName,omitempty"`
+	Id        string  `json:"id"`
+
+	// LastName User's last name (optional)
+	LastName  *string         `json:"lastName,omitempty"`
 	Role      UserProfileRole `json:"role"`
 	UpdatedAt *time.Time      `json:"updated_at,omitempty"`
 
@@ -197,12 +227,6 @@ type LoginJSONBody struct {
 	Password string `json:"password"`
 }
 
-// VerifyOtpJSONBody defines parameters for VerifyOtp.
-type VerifyOtpJSONBody struct {
-	Email string `json:"email"`
-	Otp   string `json:"otp"`
-}
-
 // ConfirmPasswordResetJSONBody defines parameters for ConfirmPasswordReset.
 type ConfirmPasswordResetJSONBody struct {
 	NewPassword string `json:"new_password"`
@@ -214,6 +238,12 @@ type RequestPasswordResetJSONBody struct {
 	Email string `json:"email"`
 }
 
+// RefreshTokenJSONBody defines parameters for RefreshToken.
+type RefreshTokenJSONBody struct {
+	// RefreshToken Required for mobile apps; for web, the cookie is used.
+	RefreshToken *string `json:"refresh_token,omitempty"`
+}
+
 // RegisterJSONBody defines parameters for Register.
 type RegisterJSONBody struct {
 	// Avatar URL to profile picture (optional)
@@ -223,6 +253,12 @@ type RegisterJSONBody struct {
 
 	// Username Unique username
 	Username string `json:"username"`
+}
+
+// VerifyOtpJSONBody defines parameters for VerifyOtp.
+type VerifyOtpJSONBody struct {
+	Email string `json:"email"`
+	Otp   string `json:"otp"`
 }
 
 // UpdatePreferencesJSONBody defines parameters for UpdatePreferences.
@@ -240,17 +276,20 @@ type UpdateUserJSONRequestBody UpdateUserJSONBody
 // LoginJSONRequestBody defines body for Login for application/json ContentType.
 type LoginJSONRequestBody LoginJSONBody
 
-// VerifyOtpJSONRequestBody defines body for VerifyOtp for application/json ContentType.
-type VerifyOtpJSONRequestBody VerifyOtpJSONBody
-
 // ConfirmPasswordResetJSONRequestBody defines body for ConfirmPasswordReset for application/json ContentType.
 type ConfirmPasswordResetJSONRequestBody ConfirmPasswordResetJSONBody
 
 // RequestPasswordResetJSONRequestBody defines body for RequestPasswordReset for application/json ContentType.
 type RequestPasswordResetJSONRequestBody RequestPasswordResetJSONBody
 
+// RefreshTokenJSONRequestBody defines body for RefreshToken for application/json ContentType.
+type RefreshTokenJSONRequestBody RefreshTokenJSONBody
+
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody RegisterJSONBody
+
+// VerifyOtpJSONRequestBody defines body for VerifyOtp for application/json ContentType.
+type VerifyOtpJSONRequestBody VerifyOtpJSONBody
 
 // UpdatePreferencesJSONRequestBody defines body for UpdatePreferences for application/json ContentType.
 type UpdatePreferencesJSONRequestBody UpdatePreferencesJSONBody
@@ -275,18 +314,27 @@ type ServerInterface interface {
 	// Login and obtain JWT
 	// (POST /auth/login)
 	Login(w http.ResponseWriter, r *http.Request)
-	// Verify OTP and activate account
-	// (POST /auth/otp/verify)
-	VerifyOtp(w http.ResponseWriter, r *http.Request)
+	// Logout – clear access and refresh token cookies (or revoke tokens)
+	// (POST /auth/logout)
+	Logout(w http.ResponseWriter, r *http.Request)
 	// Confirm password reset with token
 	// (POST /auth/password-reset/confirm)
 	ConfirmPasswordReset(w http.ResponseWriter, r *http.Request)
 	// Request password reset email
 	// (POST /auth/password-reset/request)
 	RequestPasswordReset(w http.ResponseWriter, r *http.Request)
+	// Refresh access token
+	// (POST /auth/refresh)
+	RefreshToken(w http.ResponseWriter, r *http.Request)
 	// Register a new user (pending, OTP sent via email)
 	// (POST /auth/register)
 	Register(w http.ResponseWriter, r *http.Request)
+	// Get current session user
+	// (GET /auth/session)
+	GetSession(w http.ResponseWriter, r *http.Request)
+	// Verify OTP and activate account
+	// (POST /auth/verify-otp)
+	VerifyOtp(w http.ResponseWriter, r *http.Request)
 	// Health check
 	// (GET /health)
 	GetHealth(w http.ResponseWriter, r *http.Request)
@@ -314,7 +362,7 @@ func (siw *ServerInterfaceWrapper) ListUsers(w http.ResponseWriter, r *http.Requ
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 
@@ -353,7 +401,7 @@ func (siw *ServerInterfaceWrapper) CreateUser(w http.ResponseWriter, r *http.Req
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 
@@ -384,7 +432,7 @@ func (siw *ServerInterfaceWrapper) DeleteUser(w http.ResponseWriter, r *http.Req
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 
@@ -415,7 +463,7 @@ func (siw *ServerInterfaceWrapper) GetUser(w http.ResponseWriter, r *http.Reques
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 
@@ -446,7 +494,7 @@ func (siw *ServerInterfaceWrapper) UpdateUser(w http.ResponseWriter, r *http.Req
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 
@@ -475,11 +523,11 @@ func (siw *ServerInterfaceWrapper) Login(w http.ResponseWriter, r *http.Request)
 	handler.ServeHTTP(w, r)
 }
 
-// VerifyOtp operation middleware
-func (siw *ServerInterfaceWrapper) VerifyOtp(w http.ResponseWriter, r *http.Request) {
+// Logout operation middleware
+func (siw *ServerInterfaceWrapper) Logout(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.VerifyOtp(w, r)
+		siw.Handler.Logout(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -517,11 +565,59 @@ func (siw *ServerInterfaceWrapper) RequestPasswordReset(w http.ResponseWriter, r
 	handler.ServeHTTP(w, r)
 }
 
+// RefreshToken operation middleware
+func (siw *ServerInterfaceWrapper) RefreshToken(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RefreshToken(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // Register operation middleware
 func (siw *ServerInterfaceWrapper) Register(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Register(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetSession operation middleware
+func (siw *ServerInterfaceWrapper) GetSession(w http.ResponseWriter, r *http.Request) {
+
+	ctx := r.Context()
+
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
+
+	r = r.WithContext(ctx)
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// VerifyOtp operation middleware
+func (siw *ServerInterfaceWrapper) VerifyOtp(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.VerifyOtp(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -550,7 +646,7 @@ func (siw *ServerInterfaceWrapper) GetMe(w http.ResponseWriter, r *http.Request)
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 
@@ -570,7 +666,7 @@ func (siw *ServerInterfaceWrapper) UpdatePreferences(w http.ResponseWriter, r *h
 
 	ctx := r.Context()
 
-	ctx = context.WithValue(ctx, BearerAuthScopes, []string{})
+	ctx = context.WithValue(ctx, CookieAuthScopes, []string{})
 
 	r = r.WithContext(ctx)
 
@@ -711,10 +807,13 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc("GET "+options.BaseURL+"/admin/users/{id}", wrapper.GetUser)
 	m.HandleFunc("PUT "+options.BaseURL+"/admin/users/{id}", wrapper.UpdateUser)
 	m.HandleFunc("POST "+options.BaseURL+"/auth/login", wrapper.Login)
-	m.HandleFunc("POST "+options.BaseURL+"/auth/otp/verify", wrapper.VerifyOtp)
+	m.HandleFunc("POST "+options.BaseURL+"/auth/logout", wrapper.Logout)
 	m.HandleFunc("POST "+options.BaseURL+"/auth/password-reset/confirm", wrapper.ConfirmPasswordReset)
 	m.HandleFunc("POST "+options.BaseURL+"/auth/password-reset/request", wrapper.RequestPasswordReset)
+	m.HandleFunc("POST "+options.BaseURL+"/auth/refresh", wrapper.RefreshToken)
 	m.HandleFunc("POST "+options.BaseURL+"/auth/register", wrapper.Register)
+	m.HandleFunc("GET "+options.BaseURL+"/auth/session", wrapper.GetSession)
+	m.HandleFunc("POST "+options.BaseURL+"/auth/verify-otp", wrapper.VerifyOtp)
 	m.HandleFunc("GET "+options.BaseURL+"/health", wrapper.GetHealth)
 	m.HandleFunc("GET "+options.BaseURL+"/users/me", wrapper.GetMe)
 	m.HandleFunc("PATCH "+options.BaseURL+"/users/me/preferences", wrapper.UpdatePreferences)

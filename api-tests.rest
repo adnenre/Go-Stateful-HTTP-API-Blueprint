@@ -16,7 +16,7 @@ POST {{baseUrl}}/auth/register
 Content-Type: application/json
 
 {
-    "email": "test-otp1@example.com",
+    "email": "test-otp1111@example.com",
     "password": "Test123",
     "username": "otpuser1"
 }
@@ -25,22 +25,22 @@ Content-Type: application/json
 ### Replace <OTP> in the next request with the actual value.
 
 ### ----------------------------------------
-### 3. OTP Verification (activates account and returns JWT)
+### 3. OTP Verification (activates account and returns access_token)
 ### ----------------------------------------
 # @name verifyOtp
-POST {{baseUrl}}/auth/otp/verify
+@authToken = {{verifyOtp.response.body.$.access_token}}
+POST {{baseUrl}}/auth/verify-otp
 Content-Type: application/json
 
 {
-    "email": "test-otp1@example.com",
-    "otp": "139408"   // <-- replace with actual OTP from logs
+    "email": "test-otp1111@example.com",
+    "otp": "271061"   
 }
 
-### The response contains a JWT token. Copy it to @authToken manually.
-@authToken = {{verifyOtp.response.body.$.token}}
+### The response contains an access_token. Copy it to @authToken.
 
 ### ----------------------------------------
-### 4. Login (should now succeed)
+### 4. Login (should now succeed, returns access_token + user)
 ### ----------------------------------------
 # @name login
 POST {{baseUrl}}/auth/login
@@ -48,10 +48,11 @@ Content-Type: application/json
 
 {
     "email": "test-otp1@example.com",
-    "password": "Test123"
+    "password": "Tesst123"
 }
 
-### Alternatively, use the token from OTP verification directly.
+### You can also extract token from login:
+# @authToken = {{login.response.body.$.access_token}}
 
 ### ----------------------------------------
 ### 5. Get Current User Profile (Protected)
@@ -82,9 +83,9 @@ POST {{baseUrl}}/auth/register
 Content-Type: application/json
 
 {
-    "email": "admin@example.com",
-    "password": "admin123",
-    "username": "admin"
+    "email": "admin@demo.com",
+    "password": "Admin123",
+    "username": "Admin123"
 }
 
 ### The OTP for admin will appear in the Docker logs. Copy it.
@@ -92,21 +93,26 @@ Content-Type: application/json
 ### 8. OTP Verification for Admin
 ### ----------------------------------------
 # @name adminVerifyOtp
-POST {{baseUrl}}/auth/otp/verify
+POST {{baseUrl}}/auth/verify-otp
 Content-Type: application/json
 
 {
-    "email": "admin@example.com",
-    "otp": "201196"   
+    "email": "admin@demo.com",
+    "otp": "483841"   
 }
 
-### The response gives a JWT token for the admin (still as role "user" initially).
+### The response gives an access_token for the admin (still as role "user" initially).
+### Store the token:
+@adminToken = {{adminVerifyOtp.response.body.$.access_token}}
+
 ### You still need to promote the user to admin in the database.
 
 ### 9. Promote admin user in database (run this command after OTP verification)
-### docker exec -it rest_api_postgres psql -U postgres -d rest_api_blueprint -c "UPDATE users SET role = 'admin' WHERE email = 'admin@example.com';"
+### docker exec -it rest_api_postgres psql -U postgres -d rest_api_blueprint -c "UPDATE users SET role = 'admin' WHERE email = 'admin@demo.com';"
 
-### ----------------------------------------
+### After promotion, you can use the same token – role is stored in JWT claims.
+### If you need a fresh token, login again:
+
 ### 10. Admin Login (after OTP verification and promotion)
 ### ----------------------------------------
 # @name adminLogin
@@ -114,11 +120,12 @@ POST {{baseUrl}}/auth/login
 Content-Type: application/json
 
 {
-    "email": "admin@example.com",
-    "password": "admin123"
+    "email": "admin@demo.com",
+    "password": "Admin123"
 }
 
-@adminToken = {{adminLogin.response.body.$.token}}
+### Extract fresh admin token:
+@adminToken = {{adminLogin.response.body.$.access_token}}
 
 ### ----------------------------------------
 ### 11. Admin: List all users
@@ -197,7 +204,7 @@ Content-Type: application/json
     "new_password": "NewPass5678"
 }
 
-### 19. Login with new password
+### 19. Login with new password (returns access_token)
 POST {{baseUrl}}/auth/login
 Content-Type: application/json
 

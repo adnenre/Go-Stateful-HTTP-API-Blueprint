@@ -14,7 +14,8 @@ type ContextKeyUser struct{}
 
 var UserKey = ContextKeyUser{}
 
-// JWTAuthMiddleware validates the JWT token and injects claims into the request context.
+// JWTAuthMiddleware validates the JWT token from either the access_token cookie
+// or the Authorization: Bearer header. It injects claims into the request context.
 // It skips authentication for exact paths and prefixes defined in the configuration.
 func JWTAuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 	// Build fast lookup map for exact paths
@@ -38,24 +39,31 @@ func JWTAuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 					return
 				}
 			}
-			// Authentication required
-			authHeader := r.Header.Get("Authorization")
-			if authHeader == "" {
-				err := errors.UnauthorizedError("missing authorization header")
-				errors.WriteProblem(w, r, err, GetRequestID(r))
+			// Authentication required – try to extract token
+			var tokenString string
+			// 1. Try cookie (web BFF)
+			cookie, err := r.Cookie("access_token")
+			if err == nil {
+				tokenString = cookie.Value
+			} else {
+				// 2. Try Authorization header (mobile)
+				authHeader := r.Header.Get("Authorization")
+				if authHeader != "" {
+					parts := strings.SplitN(authHeader, " ", 2)
+					if len(parts) == 2 && strings.EqualFold(parts[0], "Bearer") {
+						tokenString = parts[1]
+					}
+				}
+			}
+			if tokenString == "" {
+				errDomain := errors.UnauthorizedError("missing or invalid authentication")
+				errors.WriteProblem(w, r, errDomain, GetRequestID(r))
 				return
 			}
-			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-				err := errors.UnauthorizedError("invalid authorization format")
-				errors.WriteProblem(w, r, err, GetRequestID(r))
-				return
-			}
-			tokenString := parts[1]
 			claims, err := auth.ValidateToken(tokenString, cfg.JWTSecret)
 			if err != nil {
-				err := errors.UnauthorizedError("invalid or expired token")
-				errors.WriteProblem(w, r, err, GetRequestID(r))
+				errDomain := errors.UnauthorizedError("invalid or expired token")
+				errors.WriteProblem(w, r, errDomain, GetRequestID(r))
 				return
 			}
 			ctx := context.WithValue(r.Context(), UserKey, claims)
@@ -64,6 +72,7 @@ func JWTAuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 	}
 }
 
+// GetUserClaims extracts the authenticated user claims from the request context.
 func GetUserClaims(ctx context.Context) *auth.Claims {
 	if claims, ok := ctx.Value(UserKey).(*auth.Claims); ok {
 		return claims
